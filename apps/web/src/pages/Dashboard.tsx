@@ -12,6 +12,7 @@ const todayLabel = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'num
 export function Dashboard() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [products, setProducts] = useState<Product[]>([]); const [orders, setOrders] = useState<PurchaseOrder[]>([]); const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [histFrom, setHistFrom] = useState(''); const [histTo, setHistTo] = useState('');
+  const [chartRange, setChartRange] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
   useEffect(() => {
     Promise.all([listSales(), listProducts(), listPurchaseOrders(), listReceivables()])
       .then(([s, p, o, r]) => { setSales(s); setProducts(p); setOrders(o); setReceivables(r); })
@@ -30,8 +31,23 @@ export function Dashboard() {
   const overdueTotal = overdueReceivables.reduce((sum, r) => sum + receivableOutstanding(r), 0);
 
   const hours = Array.from({ length: 13 }, (_, i) => i + 8); // 08:00–20:00, the store's typical operating window
-  const hourlyRevenue = hours.map(h => todaySales.filter(s => new Date(s.createdAt).getHours() === h).reduce((sum, s) => sum + s.total, 0));
-  const maxHourly = Math.max(1, ...hourlyRevenue);
+
+  const chart = useMemo(() => {
+    if (chartRange === 'harian') {
+      const values = hours.map(h => todaySales.filter(s => new Date(s.createdAt).getHours() === h).reduce((sum, s) => sum + s.total, 0));
+      return { labels: hours.map(h => String(h).padStart(2, '0')), values, empty: todaySales.length === 0 };
+    }
+    if (chartRange === 'mingguan') {
+      const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
+      const values = days.map(d => { const key = d.toISOString().slice(0, 10); return sales.filter(s => s.createdAt.slice(0, 10) === key).reduce((sum, s) => sum + s.total, 0); });
+      return { labels: days.map(d => d.toLocaleDateString('id-ID', { weekday: 'short' })), values, empty: values.every(v => v === 0) };
+    }
+    const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i)); return d; });
+    const values = months.map(d => sales.filter(s => { const sd = new Date(s.createdAt); return sd.getFullYear() === d.getFullYear() && sd.getMonth() === d.getMonth(); }).reduce((sum, s) => sum + s.total, 0));
+    return { labels: months.map(d => d.toLocaleDateString('id-ID', { month: 'short' })), values, empty: values.every(v => v === 0) };
+  }, [chartRange, sales, todaySales, hours]);
+  const maxChart = Math.max(1, ...chart.values);
+  const chartSubtitle = chartRange === 'harian' ? 'Per jam, hari ini' : chartRange === 'mingguan' ? '7 hari terakhir' : '6 bulan terakhir';
 
   const filteredHistory = useMemo(() => sales
     .filter(s => (!histFrom || s.createdAt.slice(0, 10) >= histFrom) && (!histTo || s.createdAt.slice(0, 10) <= histTo))
@@ -46,8 +62,15 @@ export function Dashboard() {
       <article className="metric"><span className="metric-icon amber"><TriangleAlert /></span><div><span>Stok perlu perhatian</span><strong>{loading ? '—' : number.format(low.length)} barang</strong><small>{number.format(negativeStock)} stok negatif</small></div></article>
       <article className="metric"><span className="metric-icon purple"><PackageCheck /></span><div><span>Pembelian tertunda</span><strong>{loading ? '—' : number.format(pendingOrders.length)} PO</strong><small>Belum diterima penuh</small></div></article>
     </section>
-    <div className="dashboard-grid"><section className="panel"><div className="panel-heading"><div><h2>Aktivitas penjualan</h2><p>Per jam, hari ini</p></div><span className="status success">Aktif</span></div>
-      {todaySales.length === 0 && !loading ? <p className="muted" style={{ padding: '24px 0' }}>Belum ada transaksi hari ini.</p> : <div className="bar-chart" role="img" aria-label="Grafik pendapatan per jam">{hours.map((h, i) => <div key={h} style={{ height: `${Math.max(4, (hourlyRevenue[i] / maxHourly) * 100)}%` }}><span>{String(h).padStart(2, '0')}</span></div>)}</div>}
+    <div className="dashboard-grid"><section className="panel"><div className="panel-heading"><div><h2>Aktivitas penjualan</h2><p>{chartSubtitle}</p></div><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div className="chart-range" role="group" aria-label="Rentang grafik">
+          <button type="button" className={chartRange === 'harian' ? 'active' : ''} onClick={() => setChartRange('harian')}>Harian</button>
+          <button type="button" className={chartRange === 'mingguan' ? 'active' : ''} onClick={() => setChartRange('mingguan')}>Mingguan</button>
+          <button type="button" className={chartRange === 'bulanan' ? 'active' : ''} onClick={() => setChartRange('bulanan')}>Bulanan</button>
+        </div>
+        <span className="status success">Aktif</span>
+      </div></div>
+      {chart.empty && !loading ? <p className="muted" style={{ padding: '24px 0' }}>Belum ada transaksi pada rentang ini.</p> : <div className="bar-chart" role="img" aria-label="Grafik pendapatan">{chart.values.map((v, i) => <div key={i} style={{ height: `${Math.max(4, (v / maxChart) * 100)}%` }}><span>{chart.labels[i]}</span></div>)}</div>}
     </section>
       <section className="panel"><div className="panel-heading"><div><h2>Perlu tindakan</h2><p>Pengecualian operasional</p></div></div><ul className="action-list">
         <li><span className="dot red" /><div><strong>{number.format(negativeStock)} stok negatif</strong><span>Lakukan rekonsiliasi stok</span></div></li>
