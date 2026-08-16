@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { Boxes, Building2, ChevronLeft, CircleDollarSign, ClipboardList, Gauge, LogOut, Menu, PackageSearch, ReceiptText, Settings, ShoppingCart, UsersRound, Wifi, WifiOff, X } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
+import { Transactions } from './pages/Transactions';
 import { Products } from './pages/Products';
 import { Pos } from './pages/Pos';
 import { Inventory } from './pages/Inventory';
@@ -67,6 +68,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       {!online && <div className="offline-banner" role="alert"><WifiOff /> Koneksi terputus. Transaksi finansial tidak dapat diselesaikan.</div>}
       <div className="page-area"><Routes>
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/transactions" element={<Transactions />} />
         <Route path="/master" element={<Products />} />
         <Route path="/pos" element={<Pos online={online} />} />
         <Route path="/inventory" element={<Inventory />} />
