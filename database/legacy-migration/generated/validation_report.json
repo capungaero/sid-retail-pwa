@@ -1,0 +1,883 @@
+{
+  "table_counts": {
+    "area": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "atur_nota": {
+      "source": 9,
+      "target": 9,
+      "match": true
+    },
+    "auto_respon_custom": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "bank": {
+      "source": 5,
+      "target": 5,
+      "match": true
+    },
+    "barang": {
+      "source": 769,
+      "target": 769,
+      "match": true
+    },
+    "barang_diskon": {
+      "source": 11,
+      "target": 11,
+      "match": true
+    },
+    "bayarleasing": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "biaya": {
+      "source": 17,
+      "target": 17,
+      "match": true
+    },
+    "cabang": {
+      "source": 3,
+      "target": 3,
+      "match": true
+    },
+    "canvas": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "catatan_pesanan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "detailjasa": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "diskon_pembelian_detail": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "err_sistem": {
+      "source": 99,
+      "target": 99,
+      "match": true
+    },
+    "expired_barang": {
+      "source": 3936,
+      "target": 3936,
+      "match": true
+    },
+    "faktur_terakhir": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "faktur_terakhir_canvas": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "giroin": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "giroout": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "glog": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "golongan": {
+      "source": 32,
+      "target": 32,
+      "match": true
+    },
+    "golongan1": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "golongan2": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "goodbs": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "grouphrgpelanggan": {
+      "source": 4,
+      "target": 4,
+      "match": true
+    },
+    "grouphrgsupplier": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "header_return_penjualan": {
+      "source": 2,
+      "target": 2,
+      "match": true
+    },
+    "histori": {
+      "source": 50878,
+      "target": 50878,
+      "match": true
+    },
+    "historipoint": {
+      "source": 7,
+      "target": 7,
+      "match": true
+    },
+    "hrgpergroup": {
+      "source": 2772,
+      "target": 2772,
+      "match": true
+    },
+    "hrgpergroup_supplier": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "hutang": {
+      "source": 133,
+      "target": 133,
+      "match": true
+    },
+    "instansi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "internal_memo": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "item_barang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "item_jual_serial": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "item_oks": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "item_supp_sales": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "item_type": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itemcanvas": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itemgiroin": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itemgiroout": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itemgoodbs": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itemhutang": {
+      "source": 984,
+      "target": 984,
+      "match": true
+    },
+    "itemkoreksi": {
+      "source": 1128,
+      "target": 1128,
+      "match": true
+    },
+    "itemmutasi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itempembelian": {
+      "source": 6885,
+      "target": 6885,
+      "match": true
+    },
+    "itempengambilanbarang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itempengiriman": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itempengirimanpo": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itempenjualan": {
+      "source": 69605,
+      "target": 69605,
+      "match": true
+    },
+    "itempenjualan_paket": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "itempiutang": {
+      "source": 4595,
+      "target": 4595,
+      "match": true
+    },
+    "itemproduksi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "jenis_keperluan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "kanvas": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "karyawan": {
+      "source": 7,
+      "target": 7,
+      "match": true
+    },
+    "kas": {
+      "source": 5,
+      "target": 5,
+      "match": true
+    },
+    "kas_awal": {
+      "source": 4,
+      "target": 4,
+      "match": true
+    },
+    "kasir": {
+      "source": 5,
+      "target": 5,
+      "match": true
+    },
+    "kaskaryawan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "kategori": {
+      "source": 12,
+      "target": 12,
+      "match": true
+    },
+    "kodeprocessed": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "komplain": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "kontribusianggota": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "koreksi": {
+      "source": 198,
+      "target": 198,
+      "match": true
+    },
+    "kota": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "labarugi": {
+      "source": 71003,
+      "target": 71003,
+      "match": true
+    },
+    "leasing": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "level": {
+      "source": 8,
+      "target": 8,
+      "match": true
+    },
+    "level2": {
+      "source": 4,
+      "target": 4,
+      "match": true
+    },
+    "level_harga_toko_1": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "loginkaryawan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "loginterakhir": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "lokasi": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "member": {
+      "source": 5,
+      "target": 5,
+      "match": true
+    },
+    "mlog": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "mutasibarang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "mutasikas": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "nomor_seri": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "pajak": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pelanggan": {
+      "source": 215,
+      "target": 215,
+      "match": true
+    },
+    "pemasukan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pembayaran_angsuran": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pembelian": {
+      "source": 1939,
+      "target": 1939,
+      "match": true
+    },
+    "penerimaan_return": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pengambilanbarang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pengeluaran": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pengiriman": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pengirimanpo": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pengirimanproduksi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "penjualan": {
+      "source": 30392,
+      "target": 30392,
+      "match": true
+    },
+    "pesan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "phonebook": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "pin_sambungan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "piutang": {
+      "source": 3722,
+      "target": 3722,
+      "match": true
+    },
+    "postingtrx": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "produksi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "range_point": {
+      "source": 3,
+      "target": 3,
+      "match": true
+    },
+    "rayon": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "request": {
+      "source": 21,
+      "target": 21,
+      "match": true
+    },
+    "request_faktur_penjualan": {
+      "source": 3328,
+      "target": 3328,
+      "match": true
+    },
+    "return_pembelian": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "return_penjualan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "sales": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "sales_supplier": {
+      "source": 2,
+      "target": 2,
+      "match": true
+    },
+    "satuanbeli": {
+      "source": 19,
+      "target": 19,
+      "match": true
+    },
+    "satuanjual": {
+      "source": 18,
+      "target": 18,
+      "match": true
+    },
+    "set_point_member": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "setup_perusahaan": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "stok_per_ukuran_warna": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "subitempenjualan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "supplier": {
+      "source": 37,
+      "target": 37,
+      "match": true
+    },
+    "tabel_angsuran": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "tabungan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp": {
+      "source": 3,
+      "target": 3,
+      "match": true
+    },
+    "temp_barang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_barang_diskon": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_grafik": {
+      "source": 12,
+      "target": 12,
+      "match": true
+    },
+    "temp_item_hutang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_item_lap_laba_rugi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_jurnal": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_kartu_stok": {
+      "source": 6,
+      "target": 6,
+      "match": true
+    },
+    "temp_kas": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_kategori": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "temp_lap_laba_rugi": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_lap_mutasi_hutang_piutang": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_pelanggan": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_point": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "temp_tanggal": {
+      "source": 1,
+      "target": 1,
+      "match": true
+    },
+    "tukangjahit": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "tukar_point": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "type": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "ukuran": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "update_database": {
+      "source": 290,
+      "target": 290,
+      "match": true
+    },
+    "voucher": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    },
+    "warna": {
+      "source": 0,
+      "target": 0,
+      "match": true
+    }
+  },
+  "business_metrics": {
+    "penjualan": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(subtotal),0)",
+        "COALESCE(SUM(jumlah),0)",
+        "COALESCE(SUM(bayar),0)",
+        "COALESCE(SUM(piutang),0)"
+      ],
+      "source": [
+        30392,
+        "17910532440",
+        "17908196959",
+        "8850690917",
+        "507354063"
+      ],
+      "target": [
+        30392,
+        "17910532440",
+        "17908196959",
+        "8850690917",
+        "507354063"
+      ],
+      "match": true
+    },
+    "itempenjualan": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(qty),0)",
+        "COALESCE(SUM(subtotal),0)"
+      ],
+      "source": [
+        69605,
+        "225241",
+        "17906605440"
+      ],
+      "target": [
+        69605,
+        "225241",
+        "17906605440"
+      ],
+      "match": true
+    },
+    "pembelian": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(jumlah),0)",
+        "COALESCE(SUM(hutang),0)"
+      ],
+      "source": [
+        1939,
+        "18305843231.32",
+        "359096673"
+      ],
+      "target": [
+        1939,
+        "18305843231.32",
+        "359096673"
+      ],
+      "match": true
+    },
+    "itempembelian": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(qty),0)",
+        "COALESCE(SUM(subtotal),0)"
+      ],
+      "source": [
+        6885,
+        "199715",
+        "18305843267.32"
+      ],
+      "target": [
+        6885,
+        "199715",
+        "18305843267.32"
+      ],
+      "match": true
+    },
+    "barang": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(toko),0)",
+        "COALESCE(SUM(gudang),0)",
+        "COALESCE(SUM((toko + gudang) * hpp),0)"
+      ],
+      "source": [
+        769,
+        "30242",
+        "0",
+        "1061360113.7"
+      ],
+      "target": [
+        769,
+        "30242",
+        "0",
+        "1061360113.7"
+      ],
+      "match": true
+    },
+    "kas": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(saldo),0)"
+      ],
+      "source": [
+        5,
+        "2559406176.88"
+      ],
+      "target": [
+        5,
+        "2559406176.88"
+      ],
+      "match": true
+    },
+    "hutang": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(jumlah),0)"
+      ],
+      "source": [
+        133,
+        "11153044761.54"
+      ],
+      "target": [
+        133,
+        "11153044761.54"
+      ],
+      "match": true
+    },
+    "piutang": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(jumlah),0)"
+      ],
+      "source": [
+        3722,
+        "8879669015"
+      ],
+      "target": [
+        3722,
+        "8879669015"
+      ],
+      "match": true
+    },
+    "labarugi": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(penjualan),0)",
+        "COALESCE(SUM(hpp),0)",
+        "COALESCE(SUM(labarugi),0)"
+      ],
+      "source": [
+        71003,
+        "18027693023.95",
+        "17327365524.12",
+        "700327099.83"
+      ],
+      "target": [
+        71003,
+        "18027693023.95",
+        "17327365524.12",
+        "700327099.83"
+      ],
+      "match": true
+    }
+  },
+  "orphan_checks": {
+    "itempenjualan_to_penjualan": {
+      "source": 0,
+      "target": 0,
+      "match": true,
+      "safe_for_fk": true
+    },
+    "itempembelian_to_pembelian": {
+      "source": 0,
+      "target": 0,
+      "match": true,
+      "safe_for_fk": true
+    },
+    "itempenjualan_to_barang": {
+      "source": 1976,
+      "target": 1976,
+      "match": true,
+      "safe_for_fk": false
+    },
+    "itempembelian_to_barang": {
+      "source": 342,
+      "target": 342,
+      "match": true,
+      "safe_for_fk": false
+    }
+  },
+  "mismatches": []
+}

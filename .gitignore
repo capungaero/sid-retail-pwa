@@ -1,0 +1,14 @@
+node_modules/
+dist/
+vendor/
+.env
+pass.env
+*.log
+storage/*.key
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+tmp/
+output/
+.playwright-cli/
+

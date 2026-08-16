@@ -1,0 +1,421 @@
+Saya menyimpulkan aplikasi ini layak di-clone, tetapi jangan menghubungkan aplikasi web modern langsung ke database produksi lama tanpa lapisan kompatibilitas. Database saat ini terlalu tua dan tidak aman untuk dijadikan koneksi publik.
+Saya mempelajari [manual SID Retail](/E:/VIBECODING/bintangkembar/docs/SID_Retail.pdf), struktur database secara read-only, serta video referensi. Tidak ada data atau struktur database yang saya ubah.
+Temuan utama
+Database aplikasi: toko_1_3
+Server: MySQL 4.1.7-nt
+Encoding: latin1 / latin1_swedish_ci
+Terdapat 137 tabel, termasuk 15 tabel sementara.
+Semua tabel menggunakan MyISAM:Tidak mendukung transaksi database yang aman.
+Tidak ada foreign key.
+Risiko data setengah tersimpan jika listrik, jaringan, atau aplikasi gagal.
+
+Data aktif:30.392 transaksi penjualan.
+69.605 detail penjualan.
+1.939 pembelian.
+6.885 detail pembelian.
+Rentang transaksi Mei 2024 sampai 14 Agustus 2026.
+
+Pemeriksaan relasi menemukan tidak ada detail penjualan/pembelian tanpa header. Ini kondisi yang baik.
+Ada 14 barang dengan stok toko negatif.
+Ada 7.720 nilai tanggal kedaluwarsa 0000-00-00; format ini sering ditolak driver modern.
+Password karyawan panjangnya 32 karakter, konsisten dengan kemungkinan hash MD5. Ini perlu dikonfirmasi dan ditingkatkan.
+Akun database root tanpa password merupakan risiko kritis.
+Tabel karyawan hanya memiliki jam masuk/keluar sebagai atribut master. Belum ada tabel kejadian absensi harian yang layak untuk laporan HRD.
+Manual berasal dari 2013, sedangkan video dari 2022. Karena itu, keduanya harus dianggap referensi fungsi dan cara kerja, bukan spesifikasi final versi aplikasi yang sedang digunakan.
+Pola UI yang perlu dipertahankan
+Clone sebaiknya mempertahankan “memori kerja” pengguna, bukan menyalin tampilan lama secara pixel-perfect:
+Menu utama berdasarkan Master, Transaksi, Back Office, dan Laporan.
+Tabel/grid besar dengan pencarian cepat.
+Form master barang bertab.
+Scan barcode langsung ke kolom pencarian.
+Multi-satuan: bungkus, slop, tim, karton, dan sebagainya.
+Multi-harga berdasarkan jenis penjualan dan pelanggan.
+Operasi kasir keyboard-first.
+Shortcut penting seperti F1 memilih satuan, F5 pengaturan alur input, dan F8 menyelesaikan transaksi.
+Pemilihan pelanggan tanpa meninggalkan layar transaksi.
+Input uang tunai dan perhitungan kembalian.
+Cetak struk segera setelah transaksi.
+Tombol Tambah, Edit, Hapus, Simpan, Batal tetap berada pada posisi yang mudah dipahami pengguna lama.
+Arsitektur yang saya rekomendasikan
+```mermaid
+flowchart LR
+    A["Desktop PWA / Browser kiosk"] --> B["Backend API lokal"]
+    B --> C["Lapisan kompatibilitas SID"]
+    C --> D["Database hasil migrasi dengan skema lama"]
+    C -. "transisi read-only" .-> E["MySQL 4.1 lama"]
+    A --> F["Print bridge lokal"]
+    F --> G["Printer struk / cash drawer"]
+    H["Scanner barcode"] --> A
+```
+
+
+
+Pilihan terbaik adalah:
+Membuat salinan database lama.
+Memigrasikan salinan tersebut ke MariaDB versi yang masih didukung.
+Mempertahankan nama tabel, kolom, kode faktur, dan aturan bisnis yang dibutuhkan.
+Menjalankan aplikasi baru melalui backend API.
+Membandingkan hasil transaksi aplikasi lama dan baru pada data uji.
+Melakukan cutover setelah hasilnya identik.
+Jika aplikasi lama harus tetap berjalan dan menulis ke database yang sama, kita perlu mode transisi khusus. Menjalankan dua aplikasi yang sama-sama menulis langsung ke MySQL 4.1/MyISAM berisiko menghasilkan nomor faktur ganda, lost update stok, dan saldo kas tidak konsisten.
+Rencana pengerjaan
+1. Discovery dan pengamanan
+Backup fisik dan logical dump database.
+Membuat database staging dari salinan produksi.
+Mendokumentasikan 137 tabel, indeks, relasi implisit, dan kolom penting.
+Menginventarisasi printer, scanner, cash drawer, customer display, dan ukuran struk.
+Merekam alur kerja nyata pengguna pada aplikasi yang sedang dipakai.
+Menentukan aturan nomor faktur, pembulatan, diskon, pajak, stok, HPP/FIFO, kas, dan retur.
+Hasil fase: dokumen spesifikasi perilaku dan database staging yang aman.
+2. Proof of concept kompatibilitas
+Bangun satu alur lengkap:
+Login.
+Cari/scan barang.
+Pilih satuan.
+Tambah barang ke keranjang.
+Pilih pelanggan.
+Pembayaran tunai.
+Simpan transaksi.
+Kurangi stok.
+Perbarui kas dan laba-rugi.
+Cetak struk.
+Transaksi yang sama dijalankan pada aplikasi lama dan baru, lalu dibandingkan pada tabel penjualan, itempenjualan, barang, kas, labarugi, piutang, dan histori.
+Ini merupakan decision gate terpenting sebelum membangun seluruh modul.
+3. MVP operasional minimarket
+Urutan modul yang saya rekomendasikan:
+Login, sesi, karyawan, dan hak akses.
+Master barang, kategori, satuan, barcode, stok, harga, dan diskon.
+Pelanggan/member dan supplier.
+Kasir penjualan:Barcode dan pencarian.
+Multi-satuan dan multi-harga.
+Diskon.
+Hold/resume transaksi.
+Tunai, kartu, voucher, dan piutang.
+Retur dan cetak ulang sesuai hak akses.
+
+Pembelian dan penerimaan barang.
+Koreksi/mutasi stok.
+Kas awal, pemasukan, pengeluaran, dan tutup kas.
+Laporan harian dasar.
+4. Modul keuangan dan laporan lanjutan
+Hutang supplier dan pembayaran.
+Piutang pelanggan dan pelunasan.
+Retur pembelian/penjualan.
+Kartu stok.
+Stok minimum, stok minus, dan kedaluwarsa.
+Penjualan per barang, kategori, pelanggan, kasir, jam, shift, dan periode.
+Laba kotor/laba-rugi.
+Audit aktivitas pengguna.
+Ekspor Excel/PDF.
+5. Absensi dan HRD
+Modul ini sebaiknya memakai tabel baru, tidak dipaksakan masuk ke struktur karyawan lama:
+Pegawai dan divisi.
+Jadwal dan shift kerja.
+Check-in/check-out harian.
+Terlambat, pulang cepat, lembur, izin, sakit, dan cuti.
+Koreksi absensi dengan approval.
+Rekap bulanan dan laporan HRD.
+Integrasi mesin fingerprint, face recognition, atau QR jika dibutuhkan.
+6. Paralel run dan cutover
+Uji dengan data salinan produksi.
+Uji perangkat pada setiap meja kasir.
+Paralel run aplikasi lama dan baru untuk periode terbatas.
+Rekonsiliasi omzet, jumlah transaksi, stok, kas, hutang, piutang, dan laba.
+Backup final.
+Cutover dengan prosedur rollback yang jelas.
+Pengujian wajib
+Nomor faktur tidak pernah ganda saat beberapa kasir bertransaksi bersamaan.
+Penjualan tidak boleh tersimpan sebagian.
+Stok, kas, piutang, dan laba harus berubah sebagai satu kesatuan.
+Hasil perhitungan aplikasi lama dan baru identik.
+Scan barcode dan shortcut tetap cepat tanpa mouse.
+Struk 58/80 mm tidak terpotong.
+Hak akses lama dipetakan dengan benar.
+Penanganan latin1, tanggal nol, angka desimal, dan pembulatan.
+Pemulihan setelah jaringan atau listrik terputus.
+Audit log untuk edit, retur, pembatalan, dan cetak ulang.
+Pertanyaan yang perlu diputuskan
+Apakah “menggunakan database lama” berarti tetap memakai server MySQL 4.1 yang sama, atau datanya boleh dimigrasikan ke MariaDB dengan struktur tetap kompatibel?
+Apakah aplikasi lama harus tetap bisa dipakai bersamaan selama masa transisi?
+Untuk versi pertama, apakah cukup kasir, barang, stok, pembelian, dan laporan utama, atau seluruh fungsi manual harus langsung tersedia?
+“Web base desktop” yang diinginkan berupa browser/PWA di jaringan lokal atau installer Windows seperti aplikasi desktop?
+Berapa jumlah kasir, komputer, cabang, dan pengguna bersamaan?
+Apa model printer struk, ukuran kertas, scanner, cash drawer, timbangan, dan customer display yang digunakan?
+Apakah Anda dapat menyediakan beberapa screenshot atau rekaman alur aplikasi yang benar-benar digunakan sekarang? Ini penting karena manual dan video berasal dari versi berbeda.
+Untuk absensi, apakah akan terhubung ke fingerprint/face recognition atau cukup input melalui aplikasi?
+Keputusan paling penting adalah jawaban nomor 1 dan 2. Setelah itu arsitektur final, teknologi, pembagian milestone, dan estimasi waktunya dapat ditentukan dengan aman.
+
+
+Saturday 7:24 PM
+
+
+
+
+
+
+
+
+1 migrasikan
+2 tidak, yang penting migrasi data gampang karena struktur mirip
+3 ya semua tersedia
+4 browser / pwa
+5 10
+6 struk kasir thermal
+7 gunakan referensi manual. yang penting alur kerja utama sama
+8 sementara input 
+
+
+
+
+
+
+Saturday 7:28 PM
+
+
+
+
+
+
+Jawaban Anda cukup untuk menetapkan arsitektur. Kita akan melakukan migrasi penuh ke MariaDB, membangun PWA untuk maksimal 10 pengguna, menyediakan semua fungsi operasional dalam manual, dan tidak mempertahankan aplikasi lama setelah cutover.
+Arsitektur final
+Frontend: React + TypeScript, installable sebagai PWA.
+Backend: Laravel REST API.
+Database: MariaDB dengan InnoDB dan utf8mb4.
+Deployment: server lokal minimarket melalui LAN.
+Browser kasir: Chrome/Edge mode aplikasi atau kiosk.
+Scanner barcode: mode keyboard, otomatis masuk ke pencarian barang.
+Printer thermal: print bridge lokal agar struk bisa tercetak langsung tanpa dialog browser.
+Absensi: input manual melalui PWA.
+Maksimal awal: 10 pengguna bersamaan.
+```mermaid
+flowchart LR
+    A["PWA kasir dan back office"] --> B["Laravel API"]
+    B --> C["MariaDB / InnoDB"]
+    A --> D["Print bridge lokal"]
+    D --> E["Printer thermal"]
+    F["Scanner barcode"] --> A
+    G["Database MySQL lama"] --> H["Importer berulang"]
+    H --> C
+```
+
+
+
+Catatan penting: PWA murni biasanya menampilkan dialog print. Untuk pengalaman seperti POS desktop—tekan F8 lalu struk langsung keluar—dibutuhkan print bridge kecil pada komputer kasir.
+Strategi migrasi
+Nama tabel dan mayoritas nama kolom lama akan dipertahankan agar pemetaan data tetap sederhana. Perubahannya:
+MySQL 4.1 → MariaDB modern.
+MyISAM → InnoDB.
+latin1 → utf8mb4.
+Tanggal 0000-00-00 → NULL.
+Nilai True/False lama tetap dapat dibaca melalui adapter.
+Password lama diterima saat migrasi, kemudian otomatis di-upgrade ke Argon2id ketika pengguna login.
+Detail transaksi yang tidak mempunyai primary key akan diberi ID teknis.
+Foreign key dan indeks ditambahkan setelah pemeriksaan data.
+Tabel baru menggunakan prefiks yang jelas:app_* untuk audit, sesi, konfigurasi, antrean cetak, dan migrasi.
+hr_* untuk absensi, jadwal, izin, dan laporan HRD.
+
+Importer akan dibuat repeatable sehingga migrasi dapat dicoba berkali-kali:
+Backup database lama.
+Impor ke database staging.
+Validasi jumlah baris dan checksum/agregat.
+Transformasi encoding, tanggal, password, dan engine.
+Rekonsiliasi stok, kas, hutang, piutang, dan omzet.
+Simulasi aplikasi.
+Pada hari cutover: hentikan aplikasi lama, lakukan migrasi final, validasi, lalu aktifkan PWA.
+Tahapan pembangunan
+Tahap	Cakupan
+1. Fondasi	Struktur proyek, database baru, importer, login, RBAC, audit log
+2. Master	Barang, barcode, kategori, golongan, satuan, harga, diskon, supplier, pelanggan, member, karyawan, kas
+3. POS	Penjualan toko/partai/cabang/lain, multi-satuan, multi-harga, pelanggan, pembayaran, hold, shortcut, struk
+4. Persediaan	Pembelian, penerimaan, retur, koreksi, mutasi, pemakaian, expired, stok minimum/maksimum
+5. Keuangan	Kas awal, pemasukan, pengeluaran, hutang, piutang, angsuran, kartu, voucher, giro
+6. Laporan	Seluruh kelompok laporan pembelian, penjualan, stok, kas, laba-rugi, hutang, dan piutang
+7. HRD	Absensi manual, jadwal, shift, izin, sakit, cuti, lembur, rekap HRD
+8. Cutover	Uji 10 pengguna, rekonsiliasi, migrasi final, pelatihan, rollback plan
+
+
+Rancangan layar utama
+Sidebar atau ribbon: Master, Transaksi, Persediaan, Keuangan, Laporan, HRD, Pengaturan.
+Layar kasir dibuat penuh dan keyboard-first.
+Shortcut utama:F1: pilih satuan/harga.
+F2: fokus pencarian/barcode.
+F4: pilih pelanggan.
+F5: tahan/buka transaksi.
+F8: pembayaran dan cetak.
+Esc: batal/tutup dialog.
+
+Tombol tetap memakai istilah familiar: Tambah, Edit, Hapus, Simpan, Batal, Preview, Cetak.
+Tabel dapat difilter, diurutkan, diekspor, dan dioperasikan tanpa mouse.
+Alur utama akan mengikuti manual, tetapi tampilannya dibuat lebih bersih dan responsif.
+Pengamanan transaksi
+Karena ada hingga 10 pengguna, aplikasi baru wajib memiliki:
+Transaksi database untuk penjualan, stok, kas, dan laba.
+Nomor faktur terkunci secara atomik agar tidak ganda.
+Pencegahan double-submit.
+Idempotency key pada penyimpanan transaksi.
+Audit edit, hapus, retur, pembatalan, dan cetak ulang.
+Pembatasan akses berdasarkan level.
+Backup otomatis harian.
+Larangan mengakses database menggunakan akun root.
+Rekonsiliasi otomatis stok dan saldo.
+Fungsi lama seperti konfigurasi Hamachi, update melalui situs lama, dan restore point Windows tidak akan disalin secara harfiah. Fungsinya diganti dengan jaringan LAN, deployment aplikasi, backup database terjadwal, dan pemulihan dari backup.
+Kriteria keberhasilan migrasi
+Sebelum aplikasi baru digunakan:
+Jumlah barang, pelanggan, supplier, dan transaksi sama.
+Omzet per hari dan per faktur sama.
+Detail setiap faktur sama.
+Saldo stok, kas, hutang, dan piutang sesuai.
+Tidak ada faktur atau detail transaksi yang hilang.
+Semua 14 stok negatif tetap dilaporkan untuk dikoreksi, bukan diam-diam diubah.
+Tanggal nol dikonversi tanpa menghilangkan transaksi.
+Printer thermal berhasil pada seluruh komputer kasir.
+Sepuluh pengguna dapat bekerja bersamaan tanpa nomor faktur ganda.
+Perkiraan realistis untuk satu pengembang: MVP kasir dan inventori sekitar 2–3 bulan; seluruh fungsi manual, laporan, migrasi, dan HRD sekitar 5–8 bulan. Tahap pertama yang paling tepat adalah membangun importer, skema MariaDB, dan satu transaksi penjualan end-to-end sebagai proof of concept.
+
+
+Saturday 7:29 PM
+
+
+
+
+
+
+
+
+oke lanjut gunakan skill [$ui-ux-pro-max](C:\\Users\\Dell\\.codex\\skills\\ui-ux-pro-max\\SKILL.md) , pecah pekerjaan jadi 3 agen. 
+agent 1 build dtabase, copy data lama
+agent 2 bangun front end dan backend
+agent 3 memverfiikasi pekerjaan ke dua agen lain, memeriksa error, hasil baru di terima jika agent 3 sudah puas
+ketiga agent adalah programmer dan desainer profersional dibidangnya dengan pengalaman dan referensi yang luas. 
+
+
+
+
+
+
+Saturday 7:32 PM
+
+
+
+
+
+
+Worked for 31m 29s
+
+
+Saya akan memakai skill ui-ux-pro-max untuk menetapkan sistem desain, alur POS keyboard-first, aksesibilitas, dan standar verifikasi UI. Sesuai instruksi Anda, pekerjaan akan dibagi tepat menjadi tiga agen: migrasi database, aplikasi frontend/backend, dan quality gate independen. Database lama harus diperlakukan read-only; Agent 3 menjadi gerbang penerimaan dan berhak meminta perbaikan sebelum hasil dianggap selesai.
+
+
+
+
+Skill mewajibkan design system untuk proyek baru. Saya sedang menghasilkan dan menyimpannya sebagai sumber kebenaran bersama sebelum ketiga agen mulai, sehingga Agent 2 membangun UI yang konsisten dan Agent 3 mempunyai checklist objektif untuk menerima atau menolak hasil. Pilihan desain diarahkan ke POS desktop yang padat, cepat, minim animasi, dan sepenuhnya dapat dioperasikan dengan keyboard.
+
+
+
+
+Hasil pertama cocok pada gaya flat, densitas, dan aksesibilitas, tetapi pola “immersive experience” tidak cocok untuk kasir operasional. Sesuai aturan skill, saya tidak akan memakai bagian yang meleset itu; saya melakukan satu pencarian ulang yang lebih sempit sebelum membekukan arahan desain bagi para agen.
+
+
+
+
+Edited MASTER.md+34-40
+
+
+
+
+
+
+Design system bersama sudah tersimpan di design-system/sid-retail-pwa/MASTER.md. Saya mulai ketiga agen sekarang. Agent 1 dan 2 memiliki area kerja terpisah secara logis namun berbagi repository; Agent 3 tidak boleh memberi status lulus hanya berdasarkan keberadaan file—ia harus menjalankan migrasi/test/build, memeriksa keamanan, konsistensi transaksi, aksesibilitas, dan alur kasir.
+
+
+
+
+Database migrationApplication buildQuality gatestarted working
+
+Ketiga agen sudah aktif. Quality gate Agent 3 telah diarahkan untuk mengembalikan temuan kepada pemilik area dan melakukan retest, bukan sekadar menulis laporan. Saya akan menunggu milestone pertama sambil menjaga agar pekerjaan database dan aplikasi tidak saling menimpa.
+
+
+
+
+Agent 3 menemukan kontradiksi nyata pada design system hasil generator: token sudah biru/putih tetapi contoh CSS lama masih merah/hitam dan menggunakan hover yang menggeser layout. Saya memperbaiki sumber kebenaran itu sekarang; ini tindakan langsung yang dipicu oleh quality gate dan aturan skill.
+
+
+
+
+Edited MASTER.md+35-40
+
+
+
+
+
+
+Application buildQuality gateupdated
+
+Edited MASTER.md+3-3
+
+
+
+
+
+
+Pekerjaan masih berjalan pada ketiga jalur. Design system kini sudah bersih dari kontradiksi generator. Agent 1 sedang menyiapkan migrasi yang dapat diulang dan bukti rekonsiliasi; Agent 2 membangun alur aplikasi runnable; Agent 3 tetap aktif sebagai reviewer dan belum memberi PASS. Saya belum akan menyerahkan scaffold sebagai hasil akhir.
+
+
+
+
+tunda migrasi fokus ke ui ux dulu, gunakan saja database yang ada sementara
+
+
+
+
+
+
+
+
+
+
+
+
+
+Baik, migrasi saya tunda dan fokus dipindahkan ke UI/UX. Saya hentikan Agent 1 sekarang. Aplikasi sementara boleh membaca database lama untuk menampilkan data nyata, tetapi selama pengembangan saya tidak akan membiarkan transaksi uji menulis ke database produksi MySQL 4.1—risikonya stok, kas, dan faktur berubah. Alur simpan akan memakai mode simulasi sampai Anda menyetujui pengujian pada salinan database.
+
+
+
+
+Database migrationApplication buildQuality gateinterrupted
+
+Untuk memastikan fokus UI/UX tidak berhenti pada kode, saya juga akan memakai skill Playwright saat preview siap agar bisa menguji aplikasi di browser nyata dan memeriksa tangkapan layar pada ukuran kasir desktop serta viewport kecil. Ini tetap dalam scope quality gate UI, bukan memperluas pekerjaan migrasi.
+
+
+
+
+Application buildupdated
+
+Agent 2 telah menyelesaikan preview PWA dan seluruh pemeriksaan teknis internalnya lulus. Mutasi backend sengaja dinonaktifkan (501) dan data tulis berjalan pada adapter demo, sehingga database lama aman. Agent 3 sedang melakukan audit visual dan interaksi final; Agent 2 tetap siaga bila ada perbaikan.
+
+
+
+
+Quality gateupdated
+
+Quality gate sementara: build, typecheck, dan 4 unit test lulus; browser nyata pada 1280px dan 375px juga lulus awal. Scan barcode + Enter dan shortcut fokus F2 telah terverifikasi. Satu temuan minor tersisa berupa favicon 404; Agent 3 masih menguji modal keyboard, offline safety, console, dan responsive final sebelum keputusan PASS.
+
+
+
+
+Application buildupdated
+
+Application buildupdated
+
+Application buildQuality gateupdated
+
+Agent 3 menemukan blocker yang memang layak menahan rilis: reload offline pada build produksi menghasilkan halaman kosong karena service worker mengembalikan HTML untuk permintaan JavaScript. Perbaikan sudah dikirim ke Agent 2: fallback offline hanya untuk navigasi, aset hashed harus diprecache, dan versi cache dinaikkan. Quality gate tetap berstatus belum PASS sampai offline reload dan fokus F1/F8 lolos retest.
+
+
+
+
+Application buildupdated
+
+Quality gatefinished
+
+Dua blocker telah diperbaiki: service worker sekarang memakai Workbox dengan precache aset produksi dan fallback hanya untuk navigasi; API tetap NetworkOnly. Modal F1 kini fokus ke pilihan satuan pertama, F8 fokus sekaligus memilih isi uang diterima, dan Escape mengembalikan fokus ke scanner. Agent 3 sedang menguji ulang build produksi—status akhir masih ditahan sampai bukti offline dan keyboard terkonfirmasi.

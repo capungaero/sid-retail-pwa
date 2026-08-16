@@ -1,0 +1,16 @@
+{
+  "zero_dates": "convert_to_null",
+  "source_encoding": "latin1",
+  "target_encoding": "utf8mb4",
+  "legacy_booleans": {
+    "strategy": "preserve_normalized_string_for_compatibility",
+    "true_values": ["true", "True", "TRUE"],
+    "false_values": ["false", "False", "FALSE"]
+  },
+  "passwords": {
+    "strategy": "copy_unchanged_then_rehash_after_successful_login",
+    "never_log_values": true
+  },
+  "tables_without_primary_key": "add_app_row_id_surrogate"
+}
+

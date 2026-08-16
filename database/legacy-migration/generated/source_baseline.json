@@ -1,0 +1,271 @@
+{
+  "source": {
+    "version": "4.1.7-nt",
+    "database": "toko_1_3",
+    "charset": "latin1"
+  },
+  "table_count": 137,
+  "total_rows": 253141,
+  "table_counts": {
+    "area": 0,
+    "atur_nota": 9,
+    "auto_respon_custom": 0,
+    "bank": 5,
+    "barang": 769,
+    "barang_diskon": 11,
+    "bayarleasing": 0,
+    "biaya": 17,
+    "cabang": 3,
+    "canvas": 0,
+    "catatan_pesanan": 0,
+    "detailjasa": 0,
+    "diskon_pembelian_detail": 0,
+    "err_sistem": 99,
+    "expired_barang": 3936,
+    "faktur_terakhir": 1,
+    "faktur_terakhir_canvas": 0,
+    "giroin": 0,
+    "giroout": 0,
+    "glog": 0,
+    "golongan": 32,
+    "golongan1": 0,
+    "golongan2": 0,
+    "goodbs": 0,
+    "grouphrgpelanggan": 4,
+    "grouphrgsupplier": 0,
+    "header_return_penjualan": 2,
+    "histori": 50878,
+    "historipoint": 7,
+    "hrgpergroup": 2772,
+    "hrgpergroup_supplier": 0,
+    "hutang": 133,
+    "instansi": 0,
+    "internal_memo": 1,
+    "item_barang": 0,
+    "item_jual_serial": 0,
+    "item_oks": 0,
+    "item_supp_sales": 0,
+    "item_type": 0,
+    "itemcanvas": 0,
+    "itemgiroin": 0,
+    "itemgiroout": 0,
+    "itemgoodbs": 0,
+    "itemhutang": 984,
+    "itemkoreksi": 1128,
+    "itemmutasi": 0,
+    "itempembelian": 6885,
+    "itempengambilanbarang": 0,
+    "itempengiriman": 0,
+    "itempengirimanpo": 0,
+    "itempenjualan": 69605,
+    "itempenjualan_paket": 0,
+    "itempiutang": 4595,
+    "itemproduksi": 0,
+    "jenis_keperluan": 0,
+    "kanvas": 0,
+    "karyawan": 7,
+    "kas": 5,
+    "kas_awal": 4,
+    "kasir": 5,
+    "kaskaryawan": 0,
+    "kategori": 12,
+    "kodeprocessed": 0,
+    "komplain": 0,
+    "kontribusianggota": 0,
+    "koreksi": 198,
+    "kota": 0,
+    "labarugi": 71003,
+    "leasing": 0,
+    "level": 8,
+    "level2": 4,
+    "level_harga_toko_1": 0,
+    "loginkaryawan": 0,
+    "loginterakhir": 0,
+    "lokasi": 1,
+    "member": 5,
+    "mlog": 0,
+    "mutasibarang": 0,
+    "mutasikas": 0,
+    "nomor_seri": 1,
+    "pajak": 0,
+    "pelanggan": 215,
+    "pemasukan": 0,
+    "pembayaran_angsuran": 0,
+    "pembelian": 1939,
+    "penerimaan_return": 0,
+    "pengambilanbarang": 0,
+    "pengeluaran": 0,
+    "pengiriman": 0,
+    "pengirimanpo": 0,
+    "pengirimanproduksi": 0,
+    "penjualan": 30392,
+    "pesan": 0,
+    "phonebook": 0,
+    "pin_sambungan": 0,
+    "piutang": 3722,
+    "postingtrx": 0,
+    "produksi": 0,
+    "range_point": 3,
+    "rayon": 0,
+    "request": 21,
+    "request_faktur_penjualan": 3328,
+    "return_pembelian": 0,
+    "return_penjualan": 0,
+    "sales": 1,
+    "sales_supplier": 2,
+    "satuanbeli": 19,
+    "satuanjual": 18,
+    "set_point_member": 1,
+    "setup_perusahaan": 1,
+    "stok_per_ukuran_warna": 0,
+    "subitempenjualan": 0,
+    "supplier": 37,
+    "tabel_angsuran": 0,
+    "tabungan": 0,
+    "temp": 3,
+    "temp_barang": 0,
+    "temp_barang_diskon": 0,
+    "temp_grafik": 12,
+    "temp_item_hutang": 0,
+    "temp_item_lap_laba_rugi": 0,
+    "temp_jurnal": 0,
+    "temp_kartu_stok": 6,
+    "temp_kas": 0,
+    "temp_kategori": 1,
+    "temp_lap_laba_rugi": 0,
+    "temp_lap_mutasi_hutang_piutang": 0,
+    "temp_pelanggan": 0,
+    "temp_point": 0,
+    "temp_tanggal": 1,
+    "tukangjahit": 0,
+    "tukar_point": 0,
+    "type": 0,
+    "ukuran": 0,
+    "update_database": 290,
+    "voucher": 0,
+    "warna": 0
+  },
+  "business_metrics": {
+    "penjualan": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(subtotal),0)",
+        "COALESCE(SUM(jumlah),0)",
+        "COALESCE(SUM(bayar),0)",
+        "COALESCE(SUM(piutang),0)"
+      ],
+      "values": [
+        30392,
+        "17910532440",
+        "17908196959",
+        "8850690917",
+        "507354063"
+      ]
+    },
+    "itempenjualan": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(qty),0)",
+        "COALESCE(SUM(subtotal),0)"
+      ],
+      "values": [
+        69605,
+        "225241",
+        "17906605440"
+      ]
+    },
+    "pembelian": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(jumlah),0)",
+        "COALESCE(SUM(hutang),0)"
+      ],
+      "values": [
+        1939,
+        "18305843231.32",
+        "359096673"
+      ]
+    },
+    "itempembelian": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(qty),0)",
+        "COALESCE(SUM(subtotal),0)"
+      ],
+      "values": [
+        6885,
+        "199715",
+        "18305843267.32"
+      ]
+    },
+    "barang": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(toko),0)",
+        "COALESCE(SUM(gudang),0)",
+        "COALESCE(SUM((toko + gudang) * hpp),0)"
+      ],
+      "values": [
+        769,
+        "30242",
+        "0",
+        "1061360113.7"
+      ]
+    },
+    "kas": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(saldo),0)"
+      ],
+      "values": [
+        5,
+        "2559406176.88"
+      ]
+    },
+    "hutang": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(jumlah),0)"
+      ],
+      "values": [
+        133,
+        "11153044761.54"
+      ]
+    },
+    "piutang": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(jumlah),0)"
+      ],
+      "values": [
+        3722,
+        "8879669015"
+      ]
+    },
+    "labarugi": {
+      "expressions": [
+        "COUNT(*)",
+        "COALESCE(SUM(penjualan),0)",
+        "COALESCE(SUM(hpp),0)",
+        "COALESCE(SUM(labarugi),0)"
+      ],
+      "values": [
+        71003,
+        "18027693023.95",
+        "17327365524.12",
+        "700327099.83"
+      ]
+    }
+  },
+  "orphan_checks": {
+    "itempenjualan_to_penjualan": 0,
+    "itempembelian_to_pembelian": 0,
+    "itempenjualan_to_barang": 1976,
+    "itempembelian_to_barang": 342
+  },
+  "zero_date_counts": {
+    "expired_barang.tgl_expired": 339,
+    "itempenjualan.expired": 7720,
+    "itempiutang.tgl_piutang": 4
+  }
+}

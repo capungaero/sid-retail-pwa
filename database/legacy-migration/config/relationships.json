@@ -1,0 +1,9 @@
+{
+  "status": "proposed_not_enforced",
+  "reason": "MySQL 4.1/MyISAM has no foreign-key metadata. Add constraints only after orphan validation and application-owner approval.",
+  "candidates": [
+    {"child_table": "itempenjualan", "parent_table": "penjualan", "confidence": "high"},
+    {"child_table": "itempembelian", "parent_table": "pembelian", "confidence": "high"}
+  ]
+}
+
