@@ -9,6 +9,15 @@ import type { Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 const todayLabel = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
 
+// Label angka di atas titik chart butuh format ringkas - "Rp 1.250.000" kepanjangan
+// buat 13 titik per jam, jadi disingkat "1,3jt" / "416rb".
+function compactMoney(v: number) {
+  if (v <= 0) return '0';
+  if (v >= 1_000_000) return (v / 1_000_000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + 'jt';
+  if (v >= 1_000) return Math.round(v / 1000) + 'rb';
+  return String(Math.round(v));
+}
+
 export function Dashboard() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [products, setProducts] = useState<Product[]>([]); const [orders, setOrders] = useState<PurchaseOrder[]>([]); const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [histFrom, setHistFrom] = useState(''); const [histTo, setHistTo] = useState('');
@@ -49,6 +58,19 @@ export function Dashboard() {
   const maxChart = Math.max(1, ...chart.values);
   const chartSubtitle = chartRange === 'harian' ? 'Per jam, hari ini' : chartRange === 'mingguan' ? '7 hari terakhir' : '6 bulan terakhir';
 
+  // Geometri line chart: viewBox tetap 700x230, ada ruang atas (padTop) buat
+  // label angka per titik supaya gak nabrak garis, dan ruang bawah (padBottom)
+  // buat label waktu (jam/hari/bulan).
+  const CHART_W = 700, CHART_H = 230, padTop = 26, padBottom = 26;
+  const plotH = CHART_H - padTop - padBottom;
+  const points = chart.values.map((v, i) => {
+    const x = chart.values.length > 1 ? (i / (chart.values.length - 1)) * CHART_W : CHART_W / 2;
+    const y = padTop + (1 - v / maxChart) * plotH;
+    return { x, y, v, label: chart.labels[i] };
+  });
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = points.length ? `${linePath} L${points[points.length - 1].x.toFixed(1)},${CHART_H - padBottom} L${points[0].x.toFixed(1)},${CHART_H - padBottom} Z` : '';
+
   const filteredHistory = useMemo(() => sales
     .filter(s => (!histFrom || s.createdAt.slice(0, 10) >= histFrom) && (!histTo || s.createdAt.slice(0, 10) <= histTo))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [sales, histFrom, histTo]);
@@ -70,7 +92,17 @@ export function Dashboard() {
         </div>
         <span className="status success">Aktif</span>
       </div></div>
-      {chart.empty && !loading ? <p className="muted" style={{ padding: '24px 0' }}>Belum ada transaksi pada rentang ini.</p> : <div className="bar-chart" role="img" aria-label="Grafik pendapatan">{chart.values.map((v, i) => <div key={i} style={{ height: `${Math.max(4, (v / maxChart) * 100)}%` }}><span>{chart.labels[i]}</span></div>)}</div>}
+      {chart.empty && !loading ? <p className="muted" style={{ padding: '24px 0' }}>Belum ada transaksi pada rentang ini.</p> : <svg className="line-chart" viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" role="img" aria-label="Grafik pendapatan">
+        <defs><linearGradient id="lcGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity="0.28" /><stop offset="100%" stopColor="#3b82f6" stopOpacity="0" /></linearGradient></defs>
+        <line className="lc-axis" x1="0" y1={CHART_H - padBottom} x2={CHART_W} y2={CHART_H - padBottom} />
+        {areaPath && <path className="lc-area" d={areaPath} />}
+        {linePath && <path className="lc-line" d={linePath} />}
+        {points.map((p, i) => <g key={i}>
+          <circle className="lc-dot" cx={p.x} cy={p.y} r={4} />
+          <text className="lc-value" x={p.x} y={Math.max(12, p.y - 10)}>{compactMoney(p.v)}</text>
+          <text className="lc-label" x={p.x} y={CHART_H - padBottom + 16}>{p.label}</text>
+        </g>)}
+      </svg>}
     </section>
       <section className="panel"><div className="panel-heading"><div><h2>Perlu tindakan</h2><p>Pengecualian operasional</p></div></div><ul className="action-list">
         <li><span className="dot red" /><div><strong>{number.format(negativeStock)} stok negatif</strong><span>Lakukan rekonsiliasi stok</span></div></li>
@@ -78,9 +110,10 @@ export function Dashboard() {
         <li><span className="dot blue" /><div><strong>{number.format(overdueReceivables.length)} piutang jatuh tempo</strong><span>Total {money.format(overdueTotal)}</span></div></li>
       </ul></section></div>
     <section className="panel flush" style={{ marginTop: 12 }}>
-      <div className="table-tools"><div><h2 style={{ margin: 0 }}>Riwayat transaksi</h2><p className="muted" style={{ margin: 0 }}>{filteredHistory.length} transaksi cocok filter</p></div>
-        <label className="muted">Dari<input type="date" value={histFrom} max={histTo || undefined} onChange={e => setHistFrom(e.target.value)} style={{ display: 'block', height: 40, border: '1px solid #94a3b8', borderRadius: 7, padding: '0 8px' }} /></label>
-        <label className="muted">Sampai<input type="date" value={histTo} min={histFrom || undefined} onChange={e => setHistTo(e.target.value)} style={{ display: 'block', height: 40, border: '1px solid #94a3b8', borderRadius: 7, padding: '0 8px' }} /></label>
+      <div className="panel-heading" style={{ padding: '16px 16px 0' }}><div><h2>Riwayat transaksi</h2><p>{filteredHistory.length} transaksi cocok filter</p></div></div>
+      <div className="table-tools">
+        <label className="date-field">Dari<input type="date" value={histFrom} max={histTo || undefined} onChange={e => setHistFrom(e.target.value)} /></label>
+        <label className="date-field">Sampai<input type="date" value={histTo} min={histFrom || undefined} onChange={e => setHistTo(e.target.value)} /></label>
         <Link className="button secondary" to="/transactions">Lihat semua <ArrowRight /></Link>
       </div>
       {loading ? <div className="empty-state">Memuat riwayat transaksi…</div> : recentHistory.length === 0 ? <div className="empty-state">Tidak ada transaksi pada rentang ini.</div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Tanggal</th><th>Pelanggan</th><th className="numeric">Item</th><th className="numeric">Total</th></tr></thead><tbody>

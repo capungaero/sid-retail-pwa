@@ -28,8 +28,8 @@ export function Transactions() {
     <section className="panel flush">
       <div className="table-tools">
         <label className="search-box"><Search aria-hidden="true" /><span className="sr-only">Cari faktur atau pelanggan</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari faktur atau nama pelanggan…" /></label>
-        <label className="muted">Dari<input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} style={{ display: 'block', height: 40, border: '1px solid #94a3b8', borderRadius: 7, padding: '0 8px' }} /></label>
-        <label className="muted">Sampai<input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} style={{ display: 'block', height: 40, border: '1px solid #94a3b8', borderRadius: 7, padding: '0 8px' }} /></label>
+        <label className="date-field">Dari<input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} /></label>
+        <label className="date-field">Sampai<input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} /></label>
         <button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
