@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CircleDollarSign, PackageCheck, ReceiptText, TriangleAlert } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, CircleDollarSign, PackageCheck, ReceiptText, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { listProducts, listPurchaseOrders, listReceivables, listSales } from '../lib/api';
 import { lowStockProducts, summarizeSales } from '../lib/reports';
@@ -22,6 +22,10 @@ export function Dashboard() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [products, setProducts] = useState<Product[]>([]); const [orders, setOrders] = useState<PurchaseOrder[]>([]); const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [histFrom, setHistFrom] = useState(''); const [histTo, setHistTo] = useState('');
   const [chartRange, setChartRange] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
+  // 0 = periode berjalan (sampai hari ini); 1 = satu periode ke belakang, dst. Direset
+  // ke 0 setiap ganti tab supaya gak "nyangkut" di masa lalu waktu pindah rentang.
+  const [chartOffset, setChartOffset] = useState(0);
+  function selectRange(range: typeof chartRange) { setChartRange(range); setChartOffset(0); }
   useEffect(() => {
     Promise.all([listSales(), listProducts(), listPurchaseOrders(), listReceivables()])
       .then(([s, p, o, r]) => { setSales(s); setProducts(p); setOrders(o); setReceivables(r); })
@@ -43,20 +47,28 @@ export function Dashboard() {
 
   const chart = useMemo(() => {
     if (chartRange === 'harian') {
-      const values = hours.map(h => todaySales.filter(s => new Date(s.createdAt).getHours() === h).reduce((sum, s) => sum + s.total, 0));
-      return { labels: hours.map(h => String(h).padStart(2, '0')), values, empty: todaySales.length === 0 };
+      const day = new Date(); day.setDate(day.getDate() - chartOffset);
+      const dayKey = day.toISOString().slice(0, 10);
+      const daySales = sales.filter(s => s.createdAt.slice(0, 10) === dayKey);
+      const values = hours.map(h => daySales.filter(s => new Date(s.createdAt).getHours() === h).reduce((sum, s) => sum + s.total, 0));
+      const rangeLabel = day.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      return { labels: hours.map(h => String(h).padStart(2, '0')), values, empty: daySales.length === 0, rangeLabel };
     }
     if (chartRange === 'mingguan') {
-      const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
+      const end = new Date(); end.setDate(end.getDate() - chartOffset * 7);
+      const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(end); d.setDate(d.getDate() - (6 - i)); return d; });
       const values = days.map(d => { const key = d.toISOString().slice(0, 10); return sales.filter(s => s.createdAt.slice(0, 10) === key).reduce((sum, s) => sum + s.total, 0); });
-      return { labels: days.map(d => d.toLocaleDateString('id-ID', { weekday: 'short' })), values, empty: values.every(v => v === 0) };
+      const rangeLabel = `${days[0].toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} – ${days[6].toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      return { labels: days.map(d => d.toLocaleDateString('id-ID', { weekday: 'short' })), values, empty: values.every(v => v === 0), rangeLabel };
     }
-    const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i)); return d; });
+    const end = new Date(); end.setDate(1); end.setMonth(end.getMonth() - chartOffset * 6);
+    const months = Array.from({ length: 6 }, (_, i) => { const d = new Date(end); d.setMonth(d.getMonth() - (5 - i)); return d; });
     const values = months.map(d => sales.filter(s => { const sd = new Date(s.createdAt); return sd.getFullYear() === d.getFullYear() && sd.getMonth() === d.getMonth(); }).reduce((sum, s) => sum + s.total, 0));
-    return { labels: months.map(d => d.toLocaleDateString('id-ID', { month: 'short' })), values, empty: values.every(v => v === 0) };
-  }, [chartRange, sales, todaySales, hours]);
+    const rangeLabel = `${months[0].toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })} – ${months[5].toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}`;
+    return { labels: months.map(d => d.toLocaleDateString('id-ID', { month: 'short' })), values, empty: values.every(v => v === 0), rangeLabel };
+  }, [chartRange, chartOffset, sales, hours]);
   const maxChart = Math.max(1, ...chart.values);
-  const chartSubtitle = chartRange === 'harian' ? 'Per jam, hari ini' : chartRange === 'mingguan' ? '7 hari terakhir' : '6 bulan terakhir';
+  const canGoNext = chartOffset > 0;
 
   // Geometri line chart: viewBox tetap 700x230, ada ruang atas (padTop) buat
   // label angka per titik supaya gak nabrak garis, dan ruang bawah (padBottom)
@@ -84,11 +96,15 @@ export function Dashboard() {
       <article className="metric"><span className="metric-icon amber"><TriangleAlert /></span><div><span>Stok perlu perhatian</span><strong>{loading ? '—' : number.format(low.length)} barang</strong><small>{number.format(negativeStock)} stok negatif</small></div></article>
       <article className="metric"><span className="metric-icon purple"><PackageCheck /></span><div><span>Pembelian tertunda</span><strong>{loading ? '—' : number.format(pendingOrders.length)} PO</strong><small>Belum diterima penuh</small></div></article>
     </section>
-    <div className="dashboard-grid"><section className="panel"><div className="panel-heading"><div><h2>Aktivitas penjualan</h2><p>{chartSubtitle}</p></div><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+    <div className="dashboard-grid"><section className="panel"><div className="panel-heading"><div><h2>Aktivitas penjualan</h2><div className="chart-nav">
+          <button type="button" onClick={() => setChartOffset(o => o + 1)} aria-label="Periode sebelumnya"><ChevronLeft /></button>
+          <p>{chart.rangeLabel}</p>
+          <button type="button" onClick={() => setChartOffset(o => Math.max(0, o - 1))} disabled={!canGoNext} aria-label="Periode berikutnya"><ChevronRight /></button>
+        </div></div><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <div className="chart-range" role="group" aria-label="Rentang grafik">
-          <button type="button" className={chartRange === 'harian' ? 'active' : ''} onClick={() => setChartRange('harian')}>Harian</button>
-          <button type="button" className={chartRange === 'mingguan' ? 'active' : ''} onClick={() => setChartRange('mingguan')}>Mingguan</button>
-          <button type="button" className={chartRange === 'bulanan' ? 'active' : ''} onClick={() => setChartRange('bulanan')}>Bulanan</button>
+          <button type="button" className={chartRange === 'harian' ? 'active' : ''} onClick={() => selectRange('harian')}>Harian</button>
+          <button type="button" className={chartRange === 'mingguan' ? 'active' : ''} onClick={() => selectRange('mingguan')}>Mingguan</button>
+          <button type="button" className={chartRange === 'bulanan' ? 'active' : ''} onClick={() => selectRange('bulanan')}>Bulanan</button>
         </div>
         <span className="status success">Aktif</span>
       </div></div>
