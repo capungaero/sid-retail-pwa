@@ -61,14 +61,14 @@ export const demoSalesLog: SaleRecord[] = [
   { id: 'sale-1', invoice: 'DEMO-00000001', customerId: 'general', customerName: 'Pelanggan Umum', lines: [
     { productId: '1', productName: 'Air Mineral 600 ml', unit: 'Botol', qty: 3, price: 3500, discount: 0 },
     { productId: '2', productName: 'Mi Instan Goreng', unit: 'Pcs', qty: 5, price: 3500, discount: 500 }
-  ], total: 27500, createdAt: '2026-08-11T09:15:00.000Z' },
+  ], total: 27500, paid: 30000, change: 2500, createdAt: '2026-08-11T09:15:00.000Z' },
   { id: 'sale-2', invoice: 'DEMO-00000002', customerId: 'c-1', customerName: 'Siti Aminah', lines: [
     { productId: '5', productName: 'Beras Premium 5 kg', unit: 'Karung', qty: 2, price: 76000, discount: 0 }
-  ], total: 152000, createdAt: '2026-08-13T14:40:00.000Z' },
+  ], total: 152000, paid: 152000, change: 0, createdAt: '2026-08-13T14:40:00.000Z' },
   { id: 'sale-3', invoice: 'DEMO-00000003', customerId: 'c-2', customerName: 'Toko Berkah', lines: [
     { productId: '3', productName: 'Kopi Sachet Original', unit: 'Renceng', qty: 4, price: 20000, discount: 2000 },
     { productId: '4', productName: 'Sabun Mandi 80 g', unit: 'Pcs', qty: 10, price: 4200, discount: 0 }
-  ], total: 120000, createdAt: '2026-08-14T11:00:00.000Z' }
+  ], total: 120000, paid: 150000, change: 30000, createdAt: '2026-08-14T11:00:00.000Z' }
 ];
 
 export const demoInstruments: PaymentInstrument[] = [

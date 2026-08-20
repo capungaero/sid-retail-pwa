@@ -23,7 +23,7 @@ final class SaleController
             ->whereBetween($sc['date'], [$from, $to])
             ->orderByDesc($sc['date'])->orderByDesc($sc['id'])
             ->limit(2000)
-            ->get([$sc['id'], $sc['date'], $sc['time'], $sc['customer_code'], $sc['customer_name'], $sc['total']]);
+            ->get([$sc['id'], $sc['date'], $sc['time'], $sc['customer_code'], $sc['customer_name'], $sc['total'], $sc['paid'], $sc['change']]);
 
         if ($sales->isEmpty()) return response()->json([]);
 
@@ -49,6 +49,8 @@ final class SaleController
                 'customerName' => (string) ($sale->{$sc['customer_name']} ?? 'Pelanggan Umum'),
                 'lines' => $lines,
                 'total' => (float) $sale->{$sc['total']},
+                'paid' => (float) $sale->{$sc['paid']},
+                'change' => (float) $sale->{$sc['change']},
                 'createdAt' => $createdAt,
             ];
         })->values();

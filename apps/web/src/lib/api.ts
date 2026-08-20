@@ -140,6 +140,8 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
       customerName: customer?.name ?? 'Pelanggan Umum',
       lines: payload.lines.map(line => ({ productId: line.productId, productName: demoProducts.find(p => p.id === line.productId)?.name ?? line.productId, unit: line.unit, qty: line.qty, price: line.price, discount: line.discount })),
       total,
+      paid: payload.paid,
+      change: Math.max(0, payload.paid - total),
       createdAt: new Date().toISOString()
     });
     return { invoice, total };

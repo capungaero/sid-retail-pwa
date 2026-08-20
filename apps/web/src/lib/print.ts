@@ -1,7 +1,12 @@
-import type { CartLine, Customer, PaperWidth, StoreProfile } from '../types';
+import type { Customer, PaperWidth, StoreProfile } from '../types';
 import { money } from './money';
 
-export type Receipt = { invoice: string; customer: Customer; lines: CartLine[]; paid: number; total: number };
+// Deliberately flat and decoupled from CartLine: a receipt is printed both right after a
+// checkout (where lines come from the live cart) and when reprinting a past sale from history
+// (where lines come from SaleRecord — a plain product/qty/price snapshot, no live Product/Unit
+// objects). Both call sites map into this shape rather than receiptHtml needing two line types.
+export type ReceiptLine = { productName: string; qty: number; unitName: string; unitPrice: number; discount: number };
+export type Receipt = { invoice: string; customer: Customer; lines: ReceiptLine[]; paid: number; total: number };
 
 export function escapeHtml(value: unknown) {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]!);
@@ -13,7 +18,7 @@ export function escapeHtml(value: unknown) {
 // defaulting to 58mm (the more common size for a compact kasir printer) when unknown.
 export function receiptHtml(receipt: Receipt, profile?: StoreProfile, paperWidth: PaperWidth = '58mm') {
   const widthMm = paperWidth === '80mm' ? 80 : 58;
-  const rows = receipt.lines.map(line => `${escapeHtml(line.product.name)}\n${line.qty} ${escapeHtml(line.unit.name)} × ${money.format(line.unit.price)} = ${money.format(line.qty * line.unit.price - line.discount)}`).join('\n');
+  const rows = receipt.lines.map(line => `${escapeHtml(line.productName)}\n${line.qty} ${escapeHtml(line.unitName)} × ${money.format(line.unitPrice)} = ${money.format(line.qty * line.unitPrice - line.discount)}`).join('\n');
   const storeName = profile?.name || (import.meta.env.VITE_STORE_NAME as string | undefined) || 'SID Retail';
   const storeLine = [profile?.address, profile?.phone, profile?.taxId ? `NPWP: ${profile.taxId}` : ''].filter(Boolean).map(escapeHtml).join('<br>');
   const header = profile?.receiptHeader ? `<p class="row">${escapeHtml(profile.receiptHeader)}</p>` : '';

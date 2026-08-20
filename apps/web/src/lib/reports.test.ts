@@ -26,8 +26,8 @@ describe('filterByRange', () => {
 });
 
 const sales: SaleRecord[] = [
-  { id: 's1', invoice: 'INV-1', customerId: 'general', customerName: 'Umum', lines: [{ productId: '1', productName: 'A', unit: 'Pcs', qty: 3, price: 1000, discount: 100 }], total: 2900, createdAt: '2026-08-10T00:00:00.000Z' },
-  { id: 's2', invoice: 'INV-2', customerId: 'c-1', customerName: 'Siti', lines: [{ productId: '2', productName: 'B', unit: 'Pcs', qty: 2, price: 500, discount: 0 }], total: 1000, createdAt: '2026-08-11T00:00:00.000Z' }
+  { id: 's1', invoice: 'INV-1', customerId: 'general', customerName: 'Umum', lines: [{ productId: '1', productName: 'A', unit: 'Pcs', qty: 3, price: 1000, discount: 100 }], total: 2900, paid: 2900, change: 0, createdAt: '2026-08-10T00:00:00.000Z' },
+  { id: 's2', invoice: 'INV-2', customerId: 'c-1', customerName: 'Siti', lines: [{ productId: '2', productName: 'B', unit: 'Pcs', qty: 2, price: 500, discount: 0 }], total: 1000, paid: 1000, change: 0, createdAt: '2026-08-11T00:00:00.000Z' }
 ];
 
 describe('summarizeSales', () => {
@@ -77,11 +77,11 @@ describe('cashPosition', () => {
 describe('calculateProfitLoss', () => {
   const products: Product[] = [{ id: '1', code: 'A', barcode: '1', name: 'A', category: 'x', stock: 0, minStock: 0, cost: 400, active: true, units: [] }];
   it('computes revenue, cogs and gross profit from sale lines and product cost', () => {
-    const oneSale: SaleRecord[] = [{ id: 's1', invoice: 'INV-1', customerId: 'general', customerName: 'Umum', lines: [{ productId: '1', productName: 'A', unit: 'Pcs', qty: 5, price: 1000, discount: 200 }], total: 4800, createdAt: '2026-08-01T00:00:00.000Z' }];
+    const oneSale: SaleRecord[] = [{ id: 's1', invoice: 'INV-1', customerId: 'general', customerName: 'Umum', lines: [{ productId: '1', productName: 'A', unit: 'Pcs', qty: 5, price: 1000, discount: 200 }], total: 4800, paid: 4800, change: 0, createdAt: '2026-08-01T00:00:00.000Z' }];
     expect(calculateProfitLoss(oneSale, products)).toEqual({ revenue: 4800, cogs: 2000, grossProfit: 2800, margin: 2800 / 4800 });
   });
   it('treats products missing from the catalog as zero cost', () => {
-    const unknownProduct: SaleRecord[] = [{ id: 's1', invoice: 'INV-1', customerId: 'general', customerName: 'Umum', lines: [{ productId: 'ghost', productName: 'Ghost', unit: 'Pcs', qty: 2, price: 500, discount: 0 }], total: 1000, createdAt: '2026-08-01T00:00:00.000Z' }];
+    const unknownProduct: SaleRecord[] = [{ id: 's1', invoice: 'INV-1', customerId: 'general', customerName: 'Umum', lines: [{ productId: 'ghost', productName: 'Ghost', unit: 'Pcs', qty: 2, price: 500, discount: 0 }], total: 1000, paid: 1000, change: 0, createdAt: '2026-08-01T00:00:00.000Z' }];
     expect(calculateProfitLoss(unknownProduct, products)).toEqual({ revenue: 1000, cogs: 0, grossProfit: 1000, margin: 1 });
   });
   it('returns zero margin when there is no revenue', () => {

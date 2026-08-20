@@ -45,7 +45,7 @@ export type InstrumentStatus = 'pending' | 'cleared' | 'bounced';
 export type PaymentInstrument = { id: string; kind: InstrumentKind; reference: string; amount: number; status: InstrumentStatus; note?: string; createdAt: string; clearedAt?: string };
 
 export type SaleLine = { productId: string; productName: string; unit: string; qty: number; price: number; discount: number };
-export type SaleRecord = { id: string; invoice: string; customerId: string; customerName: string; lines: SaleLine[]; total: number; createdAt: string };
+export type SaleRecord = { id: string; invoice: string; customerId: string; customerName: string; lines: SaleLine[]; total: number; paid: number; change: number; createdAt: string };
 
 export type Employee = { id: string; name: string; role: string };
 
