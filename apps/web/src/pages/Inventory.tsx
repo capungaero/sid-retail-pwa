@@ -58,6 +58,9 @@ function PurchaseOrderModal({ suppliers, onClose, onSaved }: { suppliers: Suppli
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? ''); const [lines, setLines] = useState<PurchaseLine[]>([]);
   const [query, setQuery] = useState(''); const [results, setResults] = useState<Product[]>([]); const [picked, setPicked] = useState<Product | null>(null); const [qty, setQty] = useState(1); const [cost, setCost] = useState(0);
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false); const modalRef = useRef<HTMLElement>(null);
+  // Stable across retries of one submit attempt, regenerated only after a successful save — see
+  // the same pattern on ReturnTab's docIdRef / StockTab's idempotencyKeyRef.
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
   useEffect(() => { const timer = setTimeout(() => { if (query && !picked) listProducts(query).then(setResults).catch(() => setResults([])); else setResults([]); }, 150); return () => clearTimeout(timer); }, [query, picked]);
   useEffect(() => { const previous = document.activeElement as HTMLElement; const box = modalRef.current; const focusable = () => Array.from(box?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])') ?? []); (box?.querySelector<HTMLElement>('[data-autofocus]') ?? focusable()[0])?.focus(); const keys = (event: KeyboardEvent) => { if (event.key === 'Escape') { onClose(); return; } if (event.key !== 'Tab') return; const all = focusable(); if (!all.length) return; const first = all[0], last = all[all.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }; box?.addEventListener('keydown', keys); return () => { box?.removeEventListener('keydown', keys); previous?.focus(); }; }, [onClose]);
   function pick(product: Product) { setPicked(product); setQuery(product.name); setResults([]); setCost(product.cost); }
@@ -72,8 +75,12 @@ function PurchaseOrderModal({ suppliers, onClose, onSaved }: { suppliers: Suppli
     if (!lines.length) return setError('Tambahkan minimal satu barang.');
     setSaving(true); setError('');
     try {
-      const po: PurchaseOrder = { id: crypto.randomUUID(), reference: `PO-${Date.now().toString().slice(-6)}`, supplierId, status, lines, createdAt: new Date().toISOString() };
-      onSaved(await savePurchaseOrder(po));
+      // No client-generated id: this is always a brand-new PO here (the modal has no edit-existing
+      // flow), so the server assigns the real legacy-consistent code on save — see savePurchaseOrder.
+      const po: PurchaseOrder = { id: '', reference: `PO-${Date.now().toString().slice(-6)}`, supplierId, status, lines, createdAt: new Date().toISOString() };
+      const saved = await savePurchaseOrder(po, idempotencyKeyRef.current);
+      idempotencyKeyRef.current = crypto.randomUUID();
+      onSaved(saved);
     } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan PO'); setSaving(false); }
   }
   const total = lines.reduce((sum, l) => sum + l.qty * l.cost, 0);
@@ -100,14 +107,18 @@ function ReceiptTab() {
   useEffect(load, []);
   const openPos = useMemo(() => pos.filter(p => p.status === 'open'), [pos]);
   const selected = openPos.find(p => p.id === selectedId) ?? null;
-  useEffect(() => { if (!selected) return; const next: Record<string, number> = {}; selected.lines.forEach(l => { next[l.productId] = Math.max(0, l.qty - l.receivedQty); }); setReceiveQty(next); }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Regenerated whenever a different PO is selected (so switching targets never reuses a stale
+  // key) and after a successful save — same pattern as the other idempotency refs in this file.
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
+  useEffect(() => { if (!selected) return; const next: Record<string, number> = {}; selected.lines.forEach(l => { next[l.productId] = Math.max(0, l.qty - l.receivedQty); }); setReceiveQty(next); idempotencyKeyRef.current = crypto.randomUUID(); }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
   async function submit() {
     if (!selected) return;
     const receiptLines = Object.entries(receiveQty).filter(([, qty]) => qty > 0).map(([productId, qty]) => ({ productId, qty }));
     if (!receiptLines.length) return setError('Isi jumlah barang yang diterima.');
     setSaving(true); setError('');
     try {
-      const updated = await receiveGoods(selected.id, receiptLines);
+      const updated = await receiveGoods(selected.id, receiptLines, idempotencyKeyRef.current);
+      idempotencyKeyRef.current = crypto.randomUUID();
       setPos(current => current.map(p => p.id === updated.id ? updated : p));
       setNotice(`Penerimaan untuk ${updated.reference} tersimpan (${updated.status === 'received' ? 'PO selesai diterima' : 'PO masih terbuka, sisa barang menyusul'}).`);
       setSelectedId('');

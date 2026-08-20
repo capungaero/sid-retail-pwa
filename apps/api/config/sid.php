@@ -13,6 +13,7 @@ return [
             'id' => 'kode', 'code' => 'kode', 'barcode' => 'kode_barcode', 'name' => 'nama',
             'stock' => 'toko', 'cost' => 'hpp', 'price' => 'harga_toko',
             'unit' => 'satuan', 'multiplier' => 'isi',
+            'category' => 'kategori', 'minStock' => 'stokmin',
         ],
     ],
     'customer' => ['table' => env('SID_CUSTOMER_TABLE', 'pelanggan'), 'columns' => ['id'=>'kode','name'=>'nama','address'=>'alamat','group'=>'kdgrouphrg']],
@@ -20,6 +21,39 @@ return [
     'auth' => [
         'table' => env('SID_AUTH_TABLE', 'karyawan'),
         'columns' => ['id' => 'kode', 'password' => 'password', 'name' => 'nama', 'role' => 'level'],
+        // Legacy `karyawan.level` -> Pengaturan role (app_role_permissions key). Verified against
+        // production data (2026-08-19): ADM=1 (admin account created this session), KS=4 (ATIKA,
+        // BUDI, FEBBY, RANDI — front-line cashiers), MGG=2 (SALMAN, WID), KTR=1 (SANDRI). No
+        // legacy column documents what MGG/KTR stand for, but both sit above the 4 plain KS
+        // cashiers in headcount and naming (MGG ~ "manajer/menejer", KTR ~ "kepala toko/kantor" —
+        // a store head), so both are mapped to 'supervisor' rather than the safest-looking
+        // 'kasir' default: a supervisory title incorrectly downgraded to kasir would silently
+        // block legitimate store-management work (inventory/reports), which is a real operational
+        // cost, whereas the alternative (incorrectly elevating a cashier) is the actual risk this
+        // fix exists to close — so any level NOT in this explicit map still falls through to the
+        // least-privileged 'kasir', never assumed elevated.
+        'level_role_map' => [
+            'ADM' => 'admin',
+            'MGG' => 'supervisor',
+            'KTR' => 'supervisor',
+            'KS' => 'kasir',
+        ],
+        'default_role' => 'kasir',
+        // Pengaturan > "Hak akses per peran" permission key -> Sanctum ability strings actually
+        // checked by routes/api.php's ->middleware('ability:...') gates. 'reports' has no routes
+        // of its own (Laporan reads existing pos/inventory/finance list endpoints), so it grants
+        // read-only access to those. Product-master CRUD (master:write) is bundled under
+        // 'inventory' rather than 'pos', matching the seeded supervisor set (['pos','inventory',
+        // 'reports']) which is expected to manage the product catalog; the seeded kasir set
+        // (['pos']) intentionally excludes it.
+        'permission_abilities' => [
+            'pos' => ['pos:read', 'pos:write'],
+            'inventory' => ['inventory:read', 'inventory:write', 'master:write'],
+            'finance' => ['finance:read', 'finance:write'],
+            'reports' => ['pos:read', 'inventory:read', 'finance:read'],
+            'hrd' => ['hrd:read', 'hrd:write'],
+            'settings' => ['settings:read', 'settings:write'],
+        ],
     ],
     'sale' => [
         'table' => env('SID_SALE_TABLE', 'penjualan'),

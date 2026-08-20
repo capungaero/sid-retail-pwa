@@ -42,13 +42,31 @@ final class AuthController
         }
 
         $employee = Employee::find($data['username']);
-        $token = $employee->createToken('pos', [
-            'pos:read', 'pos:write', 'master:write',
-            'inventory:read', 'inventory:write',
-            'finance:read', 'finance:write',
-            'hrd:read', 'hrd:write',
-            'settings:read', 'settings:write',
-        ])->plainTextToken;
+
+        // Role-permission enforcement: translate the employee's legacy karyawan.level into a
+        // Pengaturan role, look up that role's stored PermissionKey[] in app_role_permissions,
+        // and grant only the matching Sanctum abilities — instead of the fixed full-access list
+        // every login used to receive regardless of role or the "Hak akses per peran" screen.
+        $levelMap = config('sid.auth.level_role_map', []);
+        $defaultRole = config('sid.auth.default_role', 'kasir');
+        $role = $levelMap[(string) $row->{$c['role']}] ?? $defaultRole;
+
+        $abilityMap = config('sid.auth.permission_abilities', []);
+        if ($role === 'admin') {
+            // Never let a misconfigured/emptied app_role_permissions row lock the admin
+            // account out of its own settings screen — admin always gets everything.
+            $abilities = array_values(array_unique(array_merge(...array_values($abilityMap))));
+        } else {
+            $permissions = DB::table('app_role_permissions')->where('role', $role)->value('permissions');
+            $permissions = $permissions ? json_decode($permissions, true) : [];
+            $abilities = [];
+            foreach ($permissions as $key) {
+                $abilities = array_merge($abilities, $abilityMap[$key] ?? []);
+            }
+            $abilities = array_values(array_unique($abilities));
+        }
+
+        $token = $employee->createToken('pos', $abilities)->plainTextToken;
 
         return response()->json([
             'token' => $token,

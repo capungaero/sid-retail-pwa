@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArchiveRestore, Banknote, Check, ChevronDown, CircleUserRound, Clock3, Minus, PackageSearch, Pause, Plus, Printer, Search, ShoppingBasket, Trash2, X } from 'lucide-react';
-import { completeSale, getStoreProfile, listCustomers, listProducts } from '../lib/api';
+import { completeSale, getPrinterConfig, getStoreProfile, listCustomers, listProducts } from '../lib/api';
 import { money, number } from '../lib/money';
-import { printReceipt } from '../lib/print';
+import { receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import type { CartLine, Customer, HeldSale, Product, Unit } from '../types';
+import type { CartLine, Customer, HeldSale, PaperWidth, Product, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
 const general: Customer = { id: 'general', code: 'UMUM', name: 'Pelanggan Umum', tier: 'retail' };
@@ -42,7 +42,7 @@ export function Pos({ online }: { online: boolean }) {
     setQuery(''); searchRef.current?.focus();
   }, []);
   const holdSale = useCallback(() => { if (!cart.length) return setNotice('Keranjang masih kosong.'); const sale: HeldSale = { id: crypto.randomUUID(), reference: `HOLD-${String(held.length + 1).padStart(3,'0')}`, customer, lines: cart, heldAt: new Date().toISOString() }; const next = [...held, sale]; setHeld(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); updateCart([]); setCustomer(general); setNotice(`${sale.reference} berhasil ditahan di perangkat ini.`); }, [cart, customer, held]);
-  useEffect(() => { const key = (event: KeyboardEvent) => { if (event.ctrlKey || event.altKey || event.metaKey) return; if (event.key === 'Escape') { setDialog(null); return; } if (dialog) return; if (event.key === 'F1') { event.preventDefault(); if (cart.length) { setSelected(Math.max(0, cart.length - 1)); setDialog('unit'); } } if (event.key === 'F2') { event.preventDefault(); searchRef.current?.focus(); } if (event.key === 'F4') { event.preventDefault(); setDialog('customer'); } if (event.key === 'F5') { event.preventDefault(); holdSale(); } if (event.key === 'F8') { event.preventDefault(); if (cart.length && online) setDialog('payment'); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [cart.length, holdSale, online, dialog]);
+  useEffect(() => { const key = (event: KeyboardEvent) => { if (event.ctrlKey || event.altKey || event.metaKey) return; if (event.key === 'Escape') { setDialog(null); return; } if (dialog) return; if (event.key === 'F1') { event.preventDefault(); if (cart.length) { if (selected < 0 || selected >= cart.length) setSelected(cart.length - 1); setDialog('unit'); } } if (event.key === 'F2') { event.preventDefault(); searchRef.current?.focus(); } if (event.key === 'F4') { event.preventDefault(); setDialog('customer'); } if (event.key === 'F5') { event.preventDefault(); holdSale(); } if (event.key === 'F8') { event.preventDefault(); if (cart.length && online) setDialog('payment'); } }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [cart.length, holdSale, online, dialog, selected]);
   function pickSearch() { const exact = results.find(p => p.barcode === query || p.code.toLowerCase() === query.toLowerCase()); if (exact) add(exact); else if (results.length === 1) add(results[0]); }
   return <div className="pos-page"><div className="pos-header"><div><p className="eyebrow">Transaksi</p><h1>Penjualan kasir</h1></div><div className="invoice-draft"><span>Draft baru</span><strong>{new Date().toLocaleTimeString('id-ID', {hour:'2-digit',minute:'2-digit'})}</strong></div></div>
     {notice && <div className="notice info" role="status">{notice}<button className="icon-button" onClick={() => setNotice('')} aria-label="Tutup pesan"><X /></button></div>}
@@ -62,4 +62,51 @@ function Modal({ title, children, onClose }: { title:string; children:ReactNode;
 function UnitDialog({ line, onPick, onClose }: { line:CartLine; onPick:(u:Unit)=>void; onClose:()=>void }) { return <Modal title="Pilih satuan dan harga" onClose={onClose}><div className="option-list">{line.product.units.map((unit,index) => <button key={unit.name} data-autofocus={index===0?'true':undefined} onClick={() => onPick(unit)}><span><strong>{unit.name}</strong><small>Isi {unit.multiplier} satuan dasar</small></span><strong>{money.format(unit.price)}</strong>{unit.name === line.unit.name && <Check />}</button>)}</div></Modal>; }
 function CustomerDialog({ onPick, onClose }: { onPick:(c:Customer)=>void; onClose:()=>void }) { const [customers,setCustomers]=useState<Customer[]>([]); const [q,setQ]=useState(''); const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [retry,setRetry]=useState(0); useEffect(()=>{let active=true;setLoading(true);setError('');const timer=setTimeout(()=>listCustomers(q).then(data=>{if(active)setCustomers(data)}).catch(err=>{if(active){setCustomers([]);setError(err instanceof Error?err.message:'Pelanggan gagal dimuat')}}).finally(()=>{if(active)setLoading(false)}),100);return()=>{active=false;clearTimeout(timer)}},[q,retry]); return <Modal title="Pilih pelanggan" onClose={onClose}><label className="search-box"><Search/><span className="sr-only">Cari pelanggan</span><input data-autofocus="true" value={q} onChange={e=>setQ(e.target.value)} placeholder="Nama atau kode pelanggan…"/></label>{loading?<div className="empty-state" role="status">Memuat pelanggan…</div>:error?<div className="inline-recovery" role="alert"><span>{error}</span><button className="button secondary" onClick={()=>setRetry(v=>v+1)}>Coba lagi</button></div>:<div className="option-list">{customers.map(c=><button key={c.id} onClick={()=>onPick(c)}><span><strong>{c.name}</strong><small>{c.code}{c.phone ? ` · ${c.phone}`:''}</small></span><span className="status">{c.tier}</span></button>)}{!customers.length&&<div className="empty-state">Pelanggan tidak ditemukan.</div>}</div>}</Modal>; }
 function HeldDialog({ sales,onPick,onClose }:{sales:HeldSale[];onPick:(s:HeldSale)=>void;onClose:()=>void}) { return <Modal title="Transaksi ditahan" onClose={onClose}>{!sales.length?<div className="empty-state">Tidak ada transaksi yang ditahan.</div>:<div className="option-list">{sales.map(s=><button key={s.id} onClick={()=>onPick(s)}><span><strong>{s.reference}</strong><small>{s.customer.name} · {s.lines.length} baris · <Clock3/> {new Date(s.heldAt).toLocaleTimeString('id-ID')}</small></span><strong>{money.format(s.lines.reduce((a,l)=>a+l.qty*l.unit.price-l.discount,0))}</strong></button>)}</div>}</Modal>; }
-function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer;cart:CartLine[];total:number;onClose:()=>void;onDone:(invoice:string,printFailed:boolean)=>void}) { const [paid,setPaid]=useState(total); const [saving,setSaving]=useState(false); const [error,setError]=useState(''); const idempotencyKey=useRef(crypto.randomUUID()); async function submit(){if(paid<total)return setError('Uang diterima kurang dari total belanja.');if(saving)return;setSaving(true);setError('');try{const payload={customerId:customer.id,lines:cart.map(l=>({productId:l.product.id,unit:l.unit.name,qty:l.qty,price:l.unit.price,discount:l.discount})),paid,idempotencyKey:idempotencyKey.current};const profile=await getStoreProfile();const result=await submitCheckout(payload,{customer,lines:cart,paid,total},{save:completeSale,print:r=>printReceipt(r,profile)});onDone(result.invoice,result.printFailed)}catch(e){setError(e instanceof Error?e.message:'Transaksi gagal disimpan');setSaving(false)}} return <Modal title="Pembayaran" onClose={onClose}><div className="payment-total"><span>Total pembayaran</span><strong>{money.format(total)}</strong></div><label>Uang diterima<input data-autofocus="true" className="money-input" type="number" min={total} value={paid} onChange={e=>setPaid(Number(e.target.value))} onFocus={e=>e.currentTarget.select()} /></label><div className="quick-cash">{[total,Math.ceil(total/10000)*10000,Math.ceil(total/50000)*50000].filter((v,i,a)=>a.indexOf(v)===i).map(v=><button key={v} onClick={()=>setPaid(v)}>{money.format(v)}</button>)}</div><div className="change"><span>Kembalian</span><strong>{money.format(Math.max(0,paid-total))}</strong></div>{error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={saving || paid<total}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }
+// Shown after a sale has already saved successfully, before anything is actually sent to a
+// printer. Closing/skipping is a valid choice (the sale is safe either way) - only an actual
+// print failure (bridge unreachable) is reported back as printFailed to the caller.
+function ReceiptPreviewModal({ receipt, profile, paperWidth, onDone }: { receipt: Receipt; profile?: StoreProfile; paperWidth: PaperWidth; onDone: (ok: boolean, err?: Error) => void }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [printing, setPrinting] = useState(false);
+  const hasBridge = Boolean(import.meta.env.VITE_PRINTER_BRIDGE_URL);
+  async function doPrint() {
+    setPrinting(true);
+    try { if (hasBridge) await sendToPrintBridge(receipt); else iframeRef.current?.contentWindow?.print(); onDone(true); }
+    catch (e) { onDone(false, e instanceof Error ? e : new Error('Cetak gagal')); }
+    finally { setPrinting(false); }
+  }
+  return <Modal title="Pratinjau struk" onClose={() => onDone(true)}>
+    <div className="receipt-preview"><iframe ref={iframeRef} title="Pratinjau struk" srcDoc={receiptHtml(receipt, profile, paperWidth)} /></div>
+    <div className="modal-actions"><button className="button secondary" onClick={() => onDone(true)}>Lewati cetak</button><button className="button primary" data-autofocus="true" onClick={doPrint} disabled={printing}><Printer /> {printing ? 'Mencetak…' : 'Cetak'}</button></div>
+  </Modal>;
+}
+function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer;cart:CartLine[];total:number;onClose:()=>void;onDone:(invoice:string,printFailed:boolean)=>void}) {
+  const [paid,setPaid]=useState(total); const [saving,setSaving]=useState(false); const [error,setError]=useState('');
+  const idempotencyKey=useRef(crypto.randomUUID());
+  const [preview, setPreview] = useState<{ receipt: Receipt; profile?: StoreProfile; paperWidth: PaperWidth } | null>(null);
+  const previewResolveRef = useRef<{ resolve: () => void; reject: (e: Error) => void } | null>(null);
+  async function submit(){
+    if(paid<total)return setError('Uang diterima kurang dari total belanja.');
+    if(saving)return;
+    setSaving(true);setError('');
+    try{
+      const payload={customerId:customer.id,lines:cart.map(l=>({productId:l.product.id,unit:l.unit.name,qty:l.qty,price:l.unit.price,discount:l.discount})),paid,idempotencyKey:idempotencyKey.current};
+      const result=await submitCheckout(payload,{customer,lines:cart,paid,total},{
+        save:completeSale,
+        print: r => {
+          const withProfileAndConfig = (async () => {
+            let profile: StoreProfile | undefined; try { profile = await getStoreProfile(); } catch { profile = undefined; }
+            let paperWidth: PaperWidth = '58mm'; try { paperWidth = (await getPrinterConfig()).paperWidth; } catch { /* keep default */ }
+            return { profile, paperWidth };
+          })();
+          return withProfileAndConfig.then(({ profile, paperWidth }) => new Promise<void>((resolve, reject) => {
+            previewResolveRef.current = { resolve, reject };
+            setPreview({ receipt: r, profile, paperWidth });
+          }));
+        }
+      });
+      onDone(result.invoice,result.printFailed);
+    }catch(e){setError(e instanceof Error?e.message:'Transaksi gagal disimpan');setSaving(false)}
+  }
+  if (preview) return <ReceiptPreviewModal receipt={preview.receipt} profile={preview.profile} paperWidth={preview.paperWidth} onDone={(ok, err) => { const resolver = previewResolveRef.current; previewResolveRef.current = null; setPreview(null); if (ok) resolver?.resolve(); else resolver?.reject(err ?? new Error('Cetak gagal')); }} />;
+  return <Modal title="Pembayaran" onClose={onClose}><div className="payment-total"><span>Total pembayaran</span><strong>{money.format(total)}</strong></div><label>Uang diterima<input data-autofocus="true" className="money-input" type="number" min={total} value={paid} onChange={e=>setPaid(Number(e.target.value))} onFocus={e=>e.currentTarget.select()} /></label><div className="quick-cash">{[total,Math.ceil(total/10000)*10000,Math.ceil(total/50000)*50000].filter((v,i,a)=>a.indexOf(v)===i).map(v=><button key={v} onClick={()=>setPaid(v)}>{money.format(v)}</button>)}</div><div className="change"><span>Kembalian</span><strong>{money.format(Math.max(0,paid-total))}</strong></div>{error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={saving || paid<total}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }

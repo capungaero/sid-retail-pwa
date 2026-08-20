@@ -19,6 +19,8 @@ final class LegacyProductWriteRepository
             $c['code'] => $data['code'],
             $c['barcode'] => $data['barcode'] ?? '',
             $c['name'] => $data['name'],
+            $c['category'] => $data['category'],
+            $c['minStock'] => $data['minStock'] ?? 0,
             $c['stock'] => $data['stock'],
             $c['cost'] => $data['cost'],
             $c['price'] => $unit['price'],

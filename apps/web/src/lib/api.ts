@@ -3,7 +3,7 @@ import { applyReceipt, poStatusAfterReceipt, signedReturnQty } from './inventory
 import { canTransitionInstrument, capPayment, nextCashBalance, payableOutstanding, receivableOutstanding } from './finance';
 import { computeAttendanceStatus, findScheduledShift } from './hrd';
 import { validateStoreProfile } from './settings';
-import { printReceipt } from './print';
+import { openReceiptPreviewPopup } from './print';
 import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, Employee, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentPayload, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
 
 const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') as string | undefined;
@@ -15,6 +15,14 @@ export const isDemoMode = !baseUrl;
 let authToken: string | null = (!isDemoMode && sessionStorage.getItem('sid-token')) || null;
 
 export type AuthUser = { id: string; name: string; role: string };
+
+// api.ts is a plain module, not a React component, so it can't set React state itself when a
+// request comes back 401 (session expired/revoked). App.tsx registers a handler here that clears
+// its loggedIn state and sends the user back to the login screen.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
 
 export async function login(username: string, password: string): Promise<AuthUser> {
   if (!baseUrl) throw new Error('API belum dikonfigurasi');
@@ -30,12 +38,25 @@ export async function login(username: string, password: string): Promise<AuthUse
   const data = await response.json() as { token: string; user: AuthUser };
   authToken = data.token;
   sessionStorage.setItem('sid-token', data.token);
+  // Persisted alongside the token so the topbar can show the real logged-in user after a
+  // navigation/reload, not just on the render that immediately follows the login POST.
+  sessionStorage.setItem('sid-user', JSON.stringify(data.user));
   return data.user;
+}
+
+// Rehydrates the logged-in user from sessionStorage (survives navigation and reload, unlike
+// component state). Returns null in demo mode or before any real login has happened.
+export function getStoredUser(): AuthUser | null {
+  if (isDemoMode) return null;
+  const raw = sessionStorage.getItem('sid-user');
+  if (!raw) return null;
+  try { return JSON.parse(raw) as AuthUser; } catch { return null; }
 }
 
 export async function logout(): Promise<void> {
   authToken = null;
   sessionStorage.removeItem('sid-token');
+  sessionStorage.removeItem('sid-user');
   if (!baseUrl) return;
   await request('/auth/logout', { method: 'POST' }).catch(() => undefined);
 }
@@ -52,6 +73,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
+    if (response.status === 401) {
+      authToken = null;
+      sessionStorage.removeItem('sid-token');
+      sessionStorage.removeItem('sid-user');
+      onUnauthorized?.();
+    }
     throw new Error(data?.message ?? `Permintaan gagal (${response.status})`);
   }
   return response.json();
@@ -141,16 +168,22 @@ export async function listPurchaseOrders(query = ''): Promise<PurchaseOrder[]> {
   return request(`/purchase-orders?search=${encodeURIComponent(query)}`);
 }
 
-export async function savePurchaseOrder(po: PurchaseOrder): Promise<PurchaseOrder> {
+// po.id is empty for a brand-new PO: the legacy 'kode' primary key is assigned server-side
+// (PurchaseOrderController::nextCode) so it stays consistent with the pre-existing 'R21-DDMMYY###'
+// rows instead of adopting a client-generated value. It's only ever non-empty here when saving
+// an update to a PO that a prior save already gave a real server-assigned id.
+export async function savePurchaseOrder(po: PurchaseOrder, idempotencyKey = crypto.randomUUID()): Promise<PurchaseOrder> {
   if (!baseUrl) {
-    const index = demoPurchaseOrders.findIndex(p => p.id === po.id);
-    if (index >= 0) demoPurchaseOrders[index] = po; else demoPurchaseOrders.push(po);
-    return po;
+    const id = po.id || crypto.randomUUID();
+    const saved = { ...po, id };
+    const index = demoPurchaseOrders.findIndex(p => p.id === id);
+    if (index >= 0) demoPurchaseOrders[index] = saved; else demoPurchaseOrders.push(saved);
+    return saved;
   }
-  return request(`/purchase-orders${po.id ? `/${po.id}` : ''}`, { method: po.id ? 'PUT' : 'POST', body: JSON.stringify(po) });
+  return request(`/purchase-orders${po.id ? `/${po.id}` : ''}`, { method: po.id ? 'PUT' : 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(po) });
 }
 
-export async function receiveGoods(poId: string, lines: { productId: string; qty: number }[]): Promise<PurchaseOrder> {
+export async function receiveGoods(poId: string, lines: { productId: string; qty: number }[], idempotencyKey = crypto.randomUUID()): Promise<PurchaseOrder> {
   if (!baseUrl) {
     const po = demoPurchaseOrders.find(p => p.id === poId);
     if (!po) throw new Error('PO tidak ditemukan');
@@ -164,7 +197,7 @@ export async function receiveGoods(poId: string, lines: { productId: string; qty
     });
     return po;
   }
-  return request(`/purchase-orders/${poId}/receive`, { method: 'POST', body: JSON.stringify({ lines }) });
+  return request(`/purchase-orders/${poId}/receive`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ lines }) });
 }
 
 export async function saveReturn(doc: ReturnDoc): Promise<ReturnDoc> {
@@ -422,7 +455,7 @@ export async function savePrinterConfig(config: PrinterConfig): Promise<PrinterC
 // flow (popup print dialog in demo mode) — no hardware is contacted.
 export async function testPrint(): Promise<void> {
   if (!baseUrl) {
-    await printReceipt({ invoice: 'TES-CETAK', customer: demoCustomers[0], lines: [], paid: 0, total: 0 }, demoStoreProfile);
+    openReceiptPreviewPopup({ invoice: 'TES-CETAK', customer: demoCustomers[0], lines: [], paid: 0, total: 0 }, demoStoreProfile, demoPrinterConfig.paperWidth);
     logAudit('test-print', `Tes cetak dikirim ke printer "${demoPrinterConfig.name}".`);
     return;
   }

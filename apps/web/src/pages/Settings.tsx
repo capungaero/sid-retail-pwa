@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CirclePlus, DatabaseBackup, Printer, RefreshCw, X } from 'lucide-react';
-import { backupNow, getPrinterConfig, getRolePermissions, getStoreProfile, listAuditLog, listUserAccounts, savePrinterConfig, saveRolePermissions, saveStoreProfile, saveUserAccount, testPrint } from '../lib/api';
+import { backupNow, getPrinterConfig, getRolePermissions, getStoreProfile, isDemoMode, listAuditLog, listUserAccounts, savePrinterConfig, saveRolePermissions, saveStoreProfile, saveUserAccount, testPrint } from '../lib/api';
 import { formatAuditEntry, togglePermission, validateStoreProfile } from '../lib/settings';
 import type { AuditLogEntry, PaperWidth, PermissionKey, PrinterConfig, PrinterConnectionType, RolePermissions, StoreProfile, UserAccount, UserRole } from '../types';
 
@@ -38,7 +38,7 @@ function useModalTrap(onClose: () => void) {
 export function Settings() {
   const [tab, setTab] = useState<TabKey>('profile');
   return <div className="page">
-    <div className="page-heading"><div><p className="eyebrow">Pengaturan</p><h1>Pengaturan</h1><p>Konfigurasi toko, pengguna, printer, dan audit — mode simulasi.</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">Pengaturan</p><h1>Pengaturan</h1><p>Konfigurasi toko, pengguna, printer, dan audit{isDemoMode ? ' — mode simulasi.' : '.'}</p></div></div>
     <div className="tabs" role="tablist" aria-label="Sub modul Pengaturan">{TABS.map(t => <button key={t.key} role="tab" aria-selected={tab === t.key} className={`tab-button ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>)}</div>
     {tab === 'profile' && <ProfileTab />}
     {tab === 'users' && <UsersTab />}
@@ -119,7 +119,7 @@ function UsersTab() {
     </section>
     <section className="panel flush">
       <div className="table-tools"><h2>Hak akses per peran</h2>{savingPerm && <span className="muted">Menyimpan…</span>}</div>
-      <p className="muted" style={{ padding: '0 20px' }}>Pengaturan tampilan saja (view only) — belum menegakkan RBAC nyata di demo ini.</p>
+      <p className="muted" style={{ padding: '0 20px' }}>{isDemoMode ? 'Pengaturan tampilan saja (view only) — belum menegakkan RBAC nyata di demo ini.' : 'Perubahan di sini langsung berlaku pada hak akses token login setiap peran.'}</p>
       {!permissions ? <div className="empty-state">Memuat hak akses…</div> : <div className="table-wrap"><table><thead><tr><th>Modul</th>{ROLES.map(r => <th key={r} className="numeric">{ROLE_LABEL[r]}</th>)}</tr></thead><tbody>{PERMISSIONS.map(key => <tr key={key}><td>{PERMISSION_LABEL[key]}</td>{ROLES.map(role => <td key={role} className="numeric"><input type="checkbox" aria-label={`${PERMISSION_LABEL[key]} — ${ROLE_LABEL[role]}`} checked={permissions[role].includes(key)} onChange={() => toggle(role, key)} /></td>)}</tr>)}</tbody></table></div>}
     </section>
     {adding && <UserModal onClose={() => setAdding(false)} onSaved={u => { setUsers(current => [...current, u]); setAdding(false); }} />}
@@ -168,7 +168,7 @@ function PrinterTab() {
   }
   async function runTestPrint() {
     setTesting(true); setTestResult(''); setError('');
-    try { await testPrint(); setTestResult('Tes cetak terkirim ke pratinjau printer.'); }
+    try { await testPrint(); setTestResult(isDemoMode ? 'Tes cetak terkirim ke pratinjau printer.' : 'Tes cetak dicatat di audit log (tidak ada perangkat yang dihubungi).'); }
     catch (err) { setError(err instanceof Error ? err.message : 'Tes cetak gagal'); }
     finally { setTesting(false); }
   }
@@ -203,9 +203,9 @@ function BackupTab() {
   return <>
     <section className="panel">
       <div className="panel-heading"><div><p className="eyebrow">Backup</p><h2>Backup data</h2></div></div>
-      <div className="notice warning" role="status">Mode simulasi: tombol di bawah hanya mencatat aktivitas backup, tidak menulis ke database sungguhan.</div>
+      <div className="notice warning" role="status">{isDemoMode ? 'Mode simulasi: tombol di bawah hanya mencatat aktivitas backup, tidak menulis ke database sungguhan.' : 'Backup ini benar-benar menulis dump database ke server.'}</div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {lastBackup && <p className="muted">Backup simulasi terakhir: {new Date(lastBackup).toLocaleString('id-ID')}</p>}
+      {lastBackup && <p className="muted">Backup terakhir: {new Date(lastBackup).toLocaleString('id-ID')}</p>}
       <div className="modal-actions"><button className="button primary" onClick={runBackup} disabled={backingUp}><DatabaseBackup /> {backingUp ? 'Memproses…' : 'Jalankan backup sekarang'}</button></div>
     </section>
     <section className="panel flush">

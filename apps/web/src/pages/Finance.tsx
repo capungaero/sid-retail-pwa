@@ -122,7 +122,7 @@ function PayablePaymentModal({ payable, onClose, onSaved }: { payable: Payable; 
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="payable-title">
     <div className="modal-heading"><div><p className="eyebrow">Hutang supplier</p><h2 id="payable-title">Bayar {payable.supplierName}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <p>Sisa hutang: <strong>{money.format(outstanding)}</strong></p>
-    <label>Jumlah dibayar<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount} onChange={e => setAmount(Number(e.target.value))} /></label>
+    <label>Jumlah dibayar<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount} onChange={e => setAmount(Math.max(0, Math.min(outstanding, Number(e.target.value))))} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="No. kwitansi, dsb." /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan pembayaran'}</button></div>
@@ -158,7 +158,7 @@ function ReceivablePaymentModal({ receivable, onClose, onSaved }: { receivable: 
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="receivable-title">
     <div className="modal-heading"><div><p className="eyebrow">Piutang pelanggan</p><h2 id="receivable-title">Terima bayar dari {receivable.customerName}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <p>Sisa piutang: <strong>{money.format(outstanding)}</strong></p>
-    <label>Jumlah diterima<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount} onChange={e => setAmount(Number(e.target.value))} /></label>
+    <label>Jumlah diterima<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount} onChange={e => setAmount(Math.max(0, Math.min(outstanding, Number(e.target.value))))} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="No. kwitansi, dsb." /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan penerimaan'}</button></div>

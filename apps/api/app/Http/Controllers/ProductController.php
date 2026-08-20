@@ -91,6 +91,8 @@ final class ProductController
             'code' => 'required|string|max:25',
             'barcode' => 'nullable|string|max:25',
             'name' => 'required|string|max:50',
+            'category' => 'required|string|max:50',
+            'minStock' => 'nullable|numeric|min:0',
             'stock' => 'required|numeric',
             'cost' => 'required|numeric|min:0',
             'units' => 'required|array|min:1',
@@ -101,7 +103,7 @@ final class ProductController
         $key = $this->writer->save($data, $id);
         return response()->json([
             'id' => $key, 'code' => $data['code'], 'barcode' => $data['barcode'] ?? '', 'name' => $data['name'],
-            'category' => '', 'stock' => (float)$data['stock'], 'minStock' => 0, 'cost' => (float)$data['cost'],
+            'category' => $data['category'], 'stock' => (float)$data['stock'], 'minStock' => (float)($data['minStock'] ?? 0), 'cost' => (float)$data['cost'],
             'units' => $data['units'], 'active' => true,
         ]);
     }

@@ -11,7 +11,8 @@ import { Reports } from './pages/Reports';
 import { Hrd } from './pages/Hrd';
 import { Settings as SettingsPage } from './pages/Settings';
 import { ModuleOverview } from './pages/ModuleOverview';
-import { isDemoMode, login as apiLogin, logout as apiLogout } from './lib/api';
+import { getStoredUser, isDemoMode, login as apiLogin, logout as apiLogout, setUnauthorizedHandler } from './lib/api';
+import type { AuthUser } from './lib/api';
 
 const sections = [
   { label: 'Ringkasan', path: '/dashboard', icon: Gauge, ready: true },
@@ -26,7 +27,7 @@ const sections = [
 
 const moduleInfo: Record<string, { title: string; description: string; items: string[] }> = {};
 
-function Login({ onLogin }: { onLogin: () => void }) {
+function Login({ onLogin }: { onLogin: (user?: AuthUser) => void }) {
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   return <main className="login-page"><section className="login-panel" aria-labelledby="login-title">
@@ -40,7 +41,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
       if (!username || !password) { setError('Username dan password wajib diisi.'); return; }
       if (isDemoMode) { onLogin(); return; }
       setPending(true); setError('');
-      try { await apiLogin(username, password); onLogin(); }
+      try { const user = await apiLogin(username, password); onLogin(user); }
       catch (err) { setError(err instanceof Error ? err.message : 'Login gagal.'); }
       finally { setPending(false); }
     }}>
@@ -53,7 +54,13 @@ function Login({ onLogin }: { onLogin: () => void }) {
   </section></main>;
 }
 
-function Shell({ onLogout }: { onLogout: () => void }) {
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '??';
+  return parts.length === 1 ? parts[0].slice(0, 2).toUpperCase() : (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void }) {
   const [open, setOpen] = useState(false); const [online, setOnline] = useState(navigator.onLine); const location = useLocation();
   useEffect(() => { const yes = () => setOnline(true); const no = () => setOnline(false); window.addEventListener('online', yes); window.addEventListener('offline', no); return () => { window.removeEventListener('online', yes); window.removeEventListener('offline', no); }; }, []);
   useEffect(() => setOpen(false), [location.pathname]);
@@ -64,7 +71,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       <div className="sidebar-footer"><span className={`connection ${online ? 'online' : 'offline'}`}>{online ? <Wifi aria-hidden="true" /> : <WifiOff aria-hidden="true" />}{online ? 'Terhubung' : 'Offline'}</span><button className="nav-link logout" onClick={onLogout}><LogOut aria-hidden="true" />Keluar</button></div>
     </aside>
     {open && <button className="scrim" aria-label="Tutup menu" onClick={() => setOpen(false)} />}
-    <main className="workspace"><header className="topbar"><button className="icon-button mobile-only" onClick={() => setOpen(true)} aria-label="Buka menu"><Menu /></button><div><strong>{import.meta.env.VITE_STORE_NAME || 'SID Retail'}</strong><span>Terminal KASIR-01</span></div>{isDemoMode && <span className="demo-badge" title="Data simulasi; tidak menulis ke database lama">Mode simulasi</span>}<div className="topbar-user"><span className="avatar">KA</span><div><strong>Kasir Demo</strong><span>Kasir</span></div></div></header>
+    <main className="workspace"><header className="topbar"><button className="icon-button mobile-only" onClick={() => setOpen(true)} aria-label="Buka menu"><Menu /></button><div><strong>{import.meta.env.VITE_STORE_NAME || 'SID Retail'}</strong><span>Terminal KASIR-01</span></div>{isDemoMode && <span className="demo-badge" title="Data simulasi; tidak menulis ke database lama">Mode simulasi</span>}<div className="topbar-user"><span className="avatar">{user ? initials(user.name) : 'KA'}</span><div><strong>{user ? user.name : 'Kasir Demo'}</strong><span>{user ? user.role : 'Kasir'}</span></div></div></header>
       {!online && <div className="offline-banner" role="alert"><WifiOff /> Koneksi terputus. Transaksi finansial tidak dapat diselesaikan.</div>}
       <div className="page-area"><Routes>
         <Route path="/dashboard" element={<Dashboard />} />
@@ -85,6 +92,18 @@ function Shell({ onLogout }: { onLogout: () => void }) {
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState(() => isDemoMode ? sessionStorage.getItem('sid-session') === 'demo' : Boolean(sessionStorage.getItem('sid-token')));
-  if (!loggedIn) return <Login onLogin={() => { if (isDemoMode) sessionStorage.setItem('sid-session', 'demo'); setLoggedIn(true); }} />;
-  return <Shell onLogout={() => { sessionStorage.removeItem('sid-session'); void apiLogout(); setLoggedIn(false); }} />;
+  // Rehydrated from sessionStorage (set alongside the token on login) so the topbar shows the
+  // real user on every page, not just the one rendered in the same tick as the login response —
+  // component state alone doesn't survive navigation/reload, sessionStorage does.
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+
+  // Registers with api.ts's plain-module 401 hook so an expired/revoked token cleanly returns
+  // the app to the login screen instead of leaving the Shell rendered with a broken panel.
+  useEffect(() => {
+    setUnauthorizedHandler(() => { setUser(null); setLoggedIn(false); });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
+  if (!loggedIn) return <Login onLogin={authUser => { if (isDemoMode) sessionStorage.setItem('sid-session', 'demo'); setUser(authUser ?? null); setLoggedIn(true); }} />;
+  return <Shell user={user} onLogout={() => { sessionStorage.removeItem('sid-session'); setUser(null); void apiLogout(); setLoggedIn(false); }} />;
 }

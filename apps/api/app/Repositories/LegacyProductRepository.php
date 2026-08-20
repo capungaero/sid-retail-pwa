@@ -22,6 +22,6 @@ final class LegacyProductRepository
 
     private function map(array $r, array $c): array
     {
-        return ['id'=>(string)$r[$c['id']], 'code'=>(string)$r[$c['code']], 'barcode'=>(string)($r[$c['barcode']]??''), 'name'=>(string)$r[$c['name']], 'category'=>'', 'stock'=>(float)$r[$c['stock']], 'minStock'=>0, 'cost'=>(float)$r[$c['cost']], 'active'=>true, 'units'=>[['name'=>(string)($r[$c['unit']]?:'Pcs'),'multiplier'=>(float)($r[$c['multiplier']]?:1),'price'=>(float)$r[$c['price']]]], 'photoUrl'=>!empty($r['photo_path']) ? Storage::disk('public')->url($r['photo_path']) : null];
+        return ['id'=>(string)$r[$c['id']], 'code'=>(string)$r[$c['code']], 'barcode'=>(string)($r[$c['barcode']]??''), 'name'=>(string)$r[$c['name']], 'category'=>(string)($r[$c['category']]??''), 'stock'=>(float)$r[$c['stock']], 'minStock'=>(float)($r[$c['minStock']]??0), 'cost'=>(float)$r[$c['cost']], 'active'=>true, 'units'=>[['name'=>(string)($r[$c['unit']]?:'Pcs'),'multiplier'=>(float)($r[$c['multiplier']]?:1),'price'=>(float)$r[$c['price']]]], 'photoUrl'=>!empty($r['photo_path']) ? Storage::disk('public')->url($r['photo_path']) : null];
     }
 }
