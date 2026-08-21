@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CirclePlus, DatabaseBackup, Printer, RefreshCw, X } from 'lucide-react';
 import { backupNow, getPrinterConfig, getRolePermissions, getStoreProfile, isDemoMode, listAuditLog, listUserAccounts, savePrinterConfig, saveRolePermissions, saveStoreProfile, saveUserAccount, testPrint } from '../lib/api';
+import { openBlankPreviewPopup, openReceiptPreviewPopup } from '../lib/print';
 import { formatAuditEntry, togglePermission, validateStoreProfile } from '../lib/settings';
 import type { AuditLogEntry, PaperWidth, PermissionKey, PrinterConfig, PrinterConnectionType, RolePermissions, StoreProfile, UserAccount, UserRole } from '../types';
 
@@ -168,8 +169,27 @@ function PrinterTab() {
   }
   async function runTestPrint() {
     setTesting(true); setTestResult(''); setError('');
-    try { await testPrint(); setTestResult(isDemoMode ? 'Tes cetak terkirim ke pratinjau printer.' : 'Tes cetak dicatat di audit log (tidak ada perangkat yang dihubungi).'); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Tes cetak gagal'); }
+    // Open the popup window synchronously inside this click handler BEFORE any await, so the
+    // browser keeps the user-gesture context and doesn't block it as an unrequested popup.
+    const popup = openBlankPreviewPopup();
+    if (!popup) { setTesting(false); setError('Popup pratinjau diblokir browser. Izinkan popup untuk situs ini lalu coba lagi.'); return; }
+    try {
+      // Fill the already-open popup with a printable sample receipt at the configured paper
+      // width, using the real store profile for header/footer - this is what lets the cashier
+      // confirm the physical printer works, not just an audit-log entry. The backend testPrint()
+      // call still records the audit trail, but its failure must not block the real print.
+      let profile: StoreProfile | undefined; try { profile = await getStoreProfile(); } catch { profile = undefined; }
+      const sample = {
+        invoice: 'TES-CETAK',
+        customer: { id: 'general', code: 'UMUM', name: 'Pelanggan Umum', tier: 'retail' as const },
+        lines: [{ productName: 'Contoh Barang A', qty: 2, unitName: 'Pcs', unitPrice: 5000, discount: 0 }, { productName: 'Contoh Barang B', qty: 1, unitName: 'Pcs', unitPrice: 12500, discount: 500 }],
+        paid: 25000, total: 22000
+      };
+      openReceiptPreviewPopup(sample, profile, form.paperWidth, popup);
+      try { await testPrint(); } catch { /* audit logging is best-effort; the print popup already opened */ }
+      setTestResult('Pratinjau tes cetak dibuka. Klik "Cetak" di jendela pratinjau untuk mengirim ke printer.');
+    }
+    catch (err) { try { popup.close(); } catch { /* ignore */ } setError(err instanceof Error ? err.message : 'Tes cetak gagal'); }
     finally { setTesting(false); }
   }
   return <section className="panel">

@@ -31,12 +31,19 @@ export function receiptHtml(receipt: Receipt, profile?: StoreProfile, paperWidth
 
 // Standalone preview+print popup for contexts outside the POS payment flow's React modal
 // (e.g. Settings > Printer > "Tes cetak") — same no-auto-print HTML, plus one plain button.
-export function openReceiptPreviewPopup(receipt: Receipt, profile?: StoreProfile, paperWidth: PaperWidth = '58mm') {
-  const popup = window.open('', '_blank', 'width=380,height=640');
-  if (!popup) throw new Error('Popup pratinjau diblokir browser');
+// Accepts an optional pre-opened window: browsers only allow window.open() synchronously
+// inside a user gesture, so callers that must `await` (e.g. fetching the store profile) should
+// openBlankPreviewPopup() first in the click handler, then pass that window in here after the
+// await resolves. Called with no popup, it opens one itself (fine when there's no preceding await).
+export function openBlankPreviewPopup(): Window | null {
+  return window.open('', '_blank', 'width=380,height=640');
+}
+export function openReceiptPreviewPopup(receipt: Receipt, profile?: StoreProfile, paperWidth: PaperWidth = '58mm', popup?: Window | null) {
+  const win = popup ?? openBlankPreviewPopup();
+  if (!win) throw new Error('Popup pratinjau diblokir browser. Izinkan popup untuk situs ini lalu coba lagi.');
   const printButton = '<div style="text-align:center;margin-top:12px"><button onclick="window.print()" style="font:600 13px sans-serif;padding:9px 18px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;cursor:pointer">Cetak</button></div>';
-  popup.document.write(receiptHtml(receipt, profile, paperWidth).replace('</body>', `${printButton}</body>`));
-  popup.document.close();
+  win.document.write(receiptHtml(receipt, profile, paperWidth).replace('</body>', `${printButton}</body>`));
+  win.document.close();
 }
 
 // Sends the receipt straight to a configured hardware print bridge (no in-app preview step
