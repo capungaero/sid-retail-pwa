@@ -19,7 +19,7 @@ final class StockController
         $data = $request->validate([
             'productId' => 'required|string|max:25',
             'qty' => 'required|numeric|not_in:0',
-            'reason' => 'required|string|max:25',
+            'reason' => 'required|string|max:50',
             'note' => 'nullable|string|max:200',
         ]);
 
