@@ -136,6 +136,23 @@ final class PurchaseOrderController
                     DB::table($productTable)->where($prc['id'], $line['productId'])->increment($prc['stock'], $line['qty']);
                     DB::table($itemTable)->where($ic['purchase_id'], $poId)->where($ic['product_code'], $line['productId'])->increment($ic['received_qty'], $line['qty']);
 
+                    // Existing stock adopts the new purchase price on receipt (no weighted
+                    // average with the old cost) — already-recorded sales are untouched because
+                    // itempenjualan snapshots its own price/hpp per line at sale time, so this
+                    // update can never rewrite history. Selling price is rescaled by the old
+                    // markup ratio (newCost * oldPrice/oldCost) to preserve the margin percentage;
+                    // if there was no old cost to derive a ratio from, only cost is updated.
+                    $newCost = (float)($item->{$ic['cost']} ?? 0);
+                    $oldCost = (float)$product->{$prc['cost']};
+                    if ($newCost > 0 && abs($newCost - $oldCost) > 0.0001) {
+                        $priceUpdate = [$prc['cost'] => $newCost];
+                        if ($oldCost > 0) {
+                            $oldPrice = (float)$product->{$prc['price']};
+                            $priceUpdate[$prc['price']] = round($newCost * ($oldPrice / $oldCost));
+                        }
+                        DB::table($productTable)->where($prc['id'], $line['productId'])->update($priceUpdate);
+                    }
+
                     DB::table('app_stock_movements')->insert([
                         'id' => (string) Str::uuid(), 'product_id' => $line['productId'], 'product_name' => $item->{$ic['product_name']},
                         'type' => 'purchase-receipt', 'qty' => $line['qty'], 'reference' => $poId, 'note' => null, 'created_at' => now(),
