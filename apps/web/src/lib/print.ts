@@ -6,7 +6,7 @@ import { money } from './money';
 // (where lines come from SaleRecord — a plain product/qty/price snapshot, no live Product/Unit
 // objects). Both call sites map into this shape rather than receiptHtml needing two line types.
 export type ReceiptLine = { productName: string; qty: number; unitName: string; unitPrice: number; discount: number };
-export type Receipt = { invoice: string; customer: Customer; lines: ReceiptLine[]; paid: number; total: number };
+export type Receipt = { invoice: string; customer: Customer; lines: ReceiptLine[]; paid: number; total: number; methodName?: string; reference?: string };
 
 export function escapeHtml(value: unknown) {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]!);
@@ -23,12 +23,14 @@ export function receiptHtml(receipt: Receipt, profile?: StoreProfile, paperWidth
   const storeLine = [profile?.address, profile?.phone, profile?.taxId ? `NPWP: ${profile.taxId}` : ''].filter(Boolean).map(escapeHtml).join('<br>');
   const header = profile?.receiptHeader ? `<p class="row">${escapeHtml(profile.receiptHeader)}</p>` : '';
   const footer = profile?.receiptFooter ? `<p class="row">${escapeHtml(profile.receiptFooter)}</p>` : '';
+  // Payment method (and reference, when present) — e.g. "METODE QRIS" / "REF QR-002210".
+  const methodLine = receipt.methodName ? `<br>METODE ${escapeHtml(receipt.methodName)}${receipt.reference ? `<br>REF ${escapeHtml(receipt.reference)}` : ''}` : '';
   // No auto-print/auto-close script here on purpose: this HTML is now always shown as an
   // explicit preview first (in an iframe inside the app, or a plain popup as a bridgeless
   // fallback) and printed only when the cashier confirms — see printPreviewedReceipt().
   // `.feed` adds blank vertical space after the last printed line so the thermal printer
   // advances enough paper for the cashier to tear the receipt cleanly below the content.
-  return `<html><head><title>${escapeHtml(receipt.invoice)}</title><style>@page{size:${widthMm}mm auto;margin:0}body{font:12px monospace;width:${widthMm}mm;margin:0 auto;padding:4mm;box-sizing:border-box}h1{font-size:16px;text-align:center}.row{white-space:pre-wrap;margin:8px 0}.total{font-weight:bold;border-top:1px dashed;padding-top:8px}.feed{height:14mm}</style></head><body><h1>${escapeHtml(storeName)}</h1>${storeLine ? `<p class="row">${storeLine}</p>` : ''}${header}<p>${escapeHtml(receipt.invoice)}<br>${new Date().toLocaleString('id-ID')}<br>${escapeHtml(receipt.customer.name)}</p><div class="row">${rows}</div><p class="total">TOTAL ${money.format(receipt.total)}<br>BAYAR ${money.format(receipt.paid)}<br>KEMBALI ${money.format(receipt.paid - receipt.total)}</p>${footer}<div class="feed"></div></body></html>`;
+  return `<html><head><title>${escapeHtml(receipt.invoice)}</title><style>@page{size:${widthMm}mm auto;margin:0}body{font:12px monospace;width:${widthMm}mm;margin:0 auto;padding:4mm;box-sizing:border-box}h1{font-size:16px;text-align:center}.row{white-space:pre-wrap;margin:8px 0}.total{font-weight:bold;border-top:1px dashed;padding-top:8px}.feed{height:14mm}</style></head><body><h1>${escapeHtml(storeName)}</h1>${storeLine ? `<p class="row">${storeLine}</p>` : ''}${header}<p>${escapeHtml(receipt.invoice)}<br>${new Date().toLocaleString('id-ID')}<br>${escapeHtml(receipt.customer.name)}</p><div class="row">${rows}</div><p class="total">TOTAL ${money.format(receipt.total)}<br>BAYAR ${money.format(receipt.paid)}<br>KEMBALI ${money.format(receipt.paid - receipt.total)}${methodLine}</p>${footer}<div class="feed"></div></body></html>`;
 }
 
 // Standalone preview+print popup for contexts outside the POS payment flow's React modal

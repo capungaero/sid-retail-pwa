@@ -62,6 +62,10 @@ return [
             'subtotal' => 'subtotal', 'discount' => 'diskon_rupiah', 'total' => 'jumlah', 'paid' => 'bayar',
             'change' => 'kembali', 'cashier' => 'kasir', 'operator' => 'operator', 'status' => 'status',
             'time' => 'jam', 'shift' => 'shif',
+            // Legacy account that received the money (kas.kode). Set from the chosen payment
+            // method's legacy_kas_code for legacy-app compatibility; NULL when the method has
+            // no mapped kas account. Previously left unset (NULL) by SaleController.
+            'kode_kas' => 'kode_kas',
         ],
     ],
     'sale_item' => [

@@ -3,7 +3,7 @@ import { submitCheckout } from './checkout';
 import { demoCustomers, demoProducts } from '../data';
 
 const line = { productName: demoProducts[0].name, unitName: demoProducts[0].units[0].name, unitPrice: demoProducts[0].units[0].price, qty: 1, discount: 0 };
-const payload = { customerId: 'general', lines: [{ productId: '1', unit: 'Botol', qty: 1, price: 3500, discount: 0 }], paid: 5000, idempotencyKey: '4503e3aa-6f3e-44fb-ae87-cac7dfc5d231' };
+const payload = { customerId: 'general', lines: [{ productId: '1', unit: 'Botol', qty: 1, price: 3500, discount: 0 }], paid: 5000, idempotencyKey: '4503e3aa-6f3e-44fb-ae87-cac7dfc5d231', paymentMethod: 'CASH' };
 
 describe('checkout boundary', () => {
   it('does not resubmit a saved sale when printing fails', async () => {

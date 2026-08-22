@@ -15,7 +15,13 @@ export type Product = {
 export type Customer = { id: string; code: string; name: string; phone?: string; tier: 'retail' | 'member' | 'wholesale' };
 export type CartLine = { product: Product; unit: Unit; qty: number; discount: number; note?: string };
 export type HeldSale = { id: string; reference: string; customer: Customer; lines: CartLine[]; heldAt: string };
-export type PaymentPayload = { customerId: string; lines: { productId: string; unit: string; qty: number; price: number; discount: number }[]; paid: number; idempotencyKey: string };
+export type PaymentPayload = { customerId: string; lines: { productId: string; unit: string; qty: number; price: number; discount: number }[]; paid: number; idempotencyKey: string; paymentMethod: string; paymentRef?: string };
+
+export type PaymentMethodType = 'cash' | 'credit' | 'transfer' | 'qris' | 'other';
+export type PaymentMethod = { id: string; code: string; name: string; type: PaymentMethodType; legacyKasCode?: string | null; active: boolean; sortOrder: number };
+
+export type DailyMethodRecap = { methodCode: string; methodName: string; count: number; amount: number };
+export type DailyRecap = { date: string; totalRevenue: number; transactionCount: number; byMethod: DailyMethodRecap[] };
 export type NavItem = { label: string; path: string; ready?: boolean };
 
 export type Supplier = { id: string; code: string; name: string; phone?: string; address?: string };
@@ -70,5 +76,5 @@ export type PrinterConnectionType = 'usb' | 'network' | 'bluetooth';
 export type PaperWidth = '58mm' | '80mm';
 export type PrinterConfig = { name: string; connection: PrinterConnectionType; paperWidth: PaperWidth };
 
-export type AuditAction = 'store-profile-update' | 'user-account-update' | 'printer-config-update' | 'backup' | 'sale' | 'purchase-order' | 'attendance' | 'test-print';
+export type AuditAction = 'store-profile-update' | 'user-account-update' | 'printer-config-update' | 'backup' | 'sale' | 'purchase-order' | 'attendance' | 'test-print' | 'payment-method-update';
 export type AuditLogEntry = { id: string; action: AuditAction; description: string; actor: string; createdAt: string };

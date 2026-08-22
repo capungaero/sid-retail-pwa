@@ -1,5 +1,5 @@
 import { payableOutstanding, receivableOutstanding } from './finance';
-import type { CashLedgerEntry, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
+import type { CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 export type DateRange = { start?: string; end?: string };
 
@@ -79,6 +79,44 @@ export function summarizePayablesBySupplier(payables: Payable[]): PartyBalance[]
     map.set(p.supplierId, entry);
   });
   return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding);
+}
+
+// The "Lainnya / tidak tercatat" bucket code for sales with no recorded payment method
+// (typically legacy sales predating this feature). Kept in sync with the backend.
+export const UNTRACKED_METHOD_CODE = '__untracked__';
+
+export type RecapSale = { invoice: string; total: number; createdAt: string };
+export type RecapPayment = { saleId: string; methodCode: string; methodName: string; amount: number };
+
+// Builds a per-payment-method daily recap for a single day (yyyy-mm-dd). Sales are joined to
+// payment rows by invoice; sales with no payment row are bucketed as "Lainnya / tidak tercatat"
+// so byMethod always reconciles with totalRevenue (the actual sum of the day's sales). Mirrors
+// the backend DailyReportController so the demo path and the real path agree.
+export function buildDailyRecap(date: string, sales: RecapSale[], payments: RecapPayment[]): DailyRecap {
+  const daySales = sales.filter(s => s.createdAt.slice(0, 10) === date);
+  const dayIds = new Set(daySales.map(s => s.invoice));
+  const dayPayments = payments.filter(p => dayIds.has(p.saleId));
+  const map = new Map<string, DailyMethodRecap>();
+  dayPayments.forEach(p => {
+    const entry = map.get(p.methodCode) ?? { methodCode: p.methodCode, methodName: p.methodName, count: 0, amount: 0 };
+    entry.count += 1; entry.amount += p.amount;
+    map.set(p.methodCode, entry);
+  });
+  const byMethod = Array.from(map.values());
+  const trackedIds = new Set(dayPayments.map(p => p.saleId));
+  const untracked = daySales.filter(s => !trackedIds.has(s.invoice));
+  if (untracked.length) {
+    byMethod.push({ methodCode: UNTRACKED_METHOD_CODE, methodName: 'Lainnya / tidak tercatat', count: untracked.length, amount: untracked.reduce((sum, s) => sum + s.total, 0) });
+  }
+  byMethod.sort((a, b) => b.amount - a.amount);
+  return { date, totalRevenue: daySales.reduce((sum, s) => sum + s.total, 0), transactionCount: daySales.length, byMethod };
+}
+
+export type MethodRecapRow = DailyMethodRecap & { percent: number };
+
+// Adds each method's share of the day's total revenue (0..1). Zero revenue → zero percentages.
+export function withMethodPercentages(byMethod: DailyMethodRecap[], totalRevenue: number): MethodRecapRow[] {
+  return byMethod.map(m => ({ ...m, percent: totalRevenue > 0 ? m.amount / totalRevenue : 0 }));
 }
 
 // Groups outstanding receivables by customer, worst (largest outstanding) first.

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Banknote, CircleDollarSign, PackageSearch, ReceiptText, RefreshCw, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
-import { listCashEntries, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
-import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales } from '../lib/reports';
+import { Banknote, CircleDollarSign, PackageSearch, ReceiptText, RefreshCw, TrendingDown, TrendingUp, TriangleAlert, Wallet } from 'lucide-react';
+import { getDailyRecap, listCashEntries, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
+import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { money, number } from '../lib/money';
-import type { CashLedgerEntry, Payable, Product, PurchaseOrder, Receivable, SaleRecord, StockMovement, StockMovementType, Supplier } from '../types';
+import type { CashLedgerEntry, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord, StockMovement, StockMovementType, Supplier } from '../types';
 
 const TABS = [
+  { key: 'daily-recap', label: 'Rekap harian' },
   { key: 'sales-purchase', label: 'Penjualan & pembelian' },
   { key: 'stock', label: 'Kartu stok & stok minimum' },
   { key: 'cash-pl', label: 'Kas & laba rugi' },
@@ -20,6 +21,7 @@ export function Reports() {
   return <div className="page">
     <div className="page-heading"><div><p className="eyebrow">Laporan</p><h1>Laporan</h1><p>Ringkasan operasional yang dapat direkonsiliasi. Modul ini hanya membaca data — tidak ada perubahan yang disimpan di sini.</p></div></div>
     <div className="tabs" role="tablist" aria-label="Sub modul laporan">{TABS.map(t => <button key={t.key} role="tab" aria-selected={tab === t.key} className={`tab-button ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>)}</div>
+    {tab === 'daily-recap' && <DailyRecapTab />}
     {tab === 'sales-purchase' && <SalesPurchaseTab />}
     {tab === 'stock' && <StockReportTab />}
     {tab === 'cash-pl' && <CashProfitLossTab />}
@@ -36,6 +38,34 @@ function DateRangeFilter({ start, end, setStart, setEnd, onReset }: { start: str
       <div className="line-add-row"><button type="button" className="button secondary" onClick={onReset}>Reset filter</button></div>
     </div>
   </section>;
+}
+
+function DailyRecapTab() {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recap, setRecap] = useState<DailyRecap | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = (d: string) => { setLoading(true); setError(''); getDailyRecap(d).then(setRecap).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat rekap harian')).finally(() => setLoading(false)); };
+  useEffect(() => { load(date); }, [date]);
+  const rows = useMemo(() => recap ? withMethodPercentages(recap.byMethod, recap.totalRevenue) : [], [recap]);
+  return <>
+    <section className="panel">
+      <div className="panel-heading"><div><p className="eyebrow">Rekap per metode</p><h2>Rekap harian</h2></div><button className="button secondary" onClick={() => load(date)} disabled={loading}><RefreshCw /> Muat ulang</button></div>
+      <div className="form-grid"><label>Tanggal<input type="date" value={date} max={new Date().toISOString().slice(0, 10)} onChange={e => setDate(e.target.value)} /></label></div>
+    </section>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <section className="metric-grid" aria-label="Ringkasan hari terpilih">
+      <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Total pendapatan</span><strong>{loading ? '—' : money.format(recap?.totalRevenue ?? 0)}</strong><small>Seluruh penjualan hari ini</small></div></article>
+      <article className="metric"><span className="metric-icon green"><ReceiptText /></span><div><span>Jumlah transaksi</span><strong>{loading ? '—' : number.format(recap?.transactionCount ?? 0)}</strong><small>Faktur pada tanggal ini</small></div></article>
+      <article className="metric"><span className="metric-icon purple"><Wallet /></span><div><span>Metode terpakai</span><strong>{loading ? '—' : number.format(rows.length)}</strong><small>Rincian di bawah</small></div></article>
+    </section>
+    <section className="panel flush">
+      <div className="table-tools"><h2>Rincian per metode pembayaran</h2></div>
+      {loading ? <div className="empty-state">Memuat rekap…</div> : !rows.length ? <div className="empty-state">Belum ada penjualan pada tanggal ini.</div> : <div className="table-wrap"><table><thead><tr><th>Metode</th><th className="numeric">Jumlah transaksi</th><th className="numeric">Total</th><th className="numeric">% hari ini</th></tr></thead><tbody>
+        {rows.map(r => <tr key={r.methodCode}><td>{r.methodName}</td><td className="numeric mono">{number.format(r.count)}</td><td className="numeric mono">{money.format(r.amount)}</td><td className="numeric mono">{(r.percent * 100).toFixed(1)}%</td></tr>)}
+      </tbody><tfoot><tr><th>Total</th><th className="numeric mono">{number.format(recap?.transactionCount ?? 0)}</th><th className="numeric mono">{money.format(recap?.totalRevenue ?? 0)}</th><th className="numeric mono">100.0%</th></tr></tfoot></table></div>}
+    </section>
+  </>;
 }
 
 function SalesPurchaseTab() {

@@ -60,7 +60,12 @@ final class SaleController
 
     public function __invoke(Request $request): JsonResponse
     {
-        $data = $request->validate(['customerId'=>'required|string|max:64','paid'=>'required|numeric|min:0','idempotencyKey'=>'required|uuid','lines'=>'required|array|min:1','lines.*.productId'=>'required|string','lines.*.unit'=>'required|string','lines.*.qty'=>'required|numeric|gt:0','lines.*.price'=>'required|numeric|min:0','lines.*.discount'=>'required|numeric|min:0']);
+        $data = $request->validate(['customerId'=>'required|string|max:64','paid'=>'required|numeric|min:0','idempotencyKey'=>'required|uuid','paymentMethod'=>'required|string|max:32','paymentRef'=>'nullable|string|max:64','lines'=>'required|array|min:1','lines.*.productId'=>'required|string','lines.*.unit'=>'required|string','lines.*.qty'=>'required|numeric|gt:0','lines.*.price'=>'required|numeric|min:0','lines.*.discount'=>'required|numeric|min:0']);
+
+        // Payment method must be an ACTIVE, configured method (app_payment_methods.code). Looked
+        // up before the transaction so an invalid method fails fast without touching stock/kas.
+        $method = DB::table('app_payment_methods')->where('code', $data['paymentMethod'])->where('active', true)->first();
+        if (!$method) return response()->json(['message' => 'Metode pembayaran tidak valid atau nonaktif.'], 422);
 
         $idempotencyKey = $data['idempotencyKey'];
         $existing = DB::table('app_idempotency_keys')->where('idempotency_key', $idempotencyKey)->first();
@@ -69,10 +74,22 @@ final class SaleController
         $subtotal = 0; $discountTotal = 0;
         foreach ($data['lines'] as $line) { $subtotal += $line['qty'] * $line['price']; $discountTotal += $line['discount']; }
         $total = $subtotal - $discountTotal;
-        // No receivable (piutang) support yet — reject underpayment rather than silently
-        // recording a partially-paid sale as LUNAS (fully paid). See config('sid.sale.*').
-        if ($data['paid'] < $total) {
-            return response()->json(['message' => 'Jumlah bayar kurang dari total belanja.'], 422);
+
+        // paid/change are decided SERVER-SIDE by method type — never trusted from the client.
+        // Cash: cashier tenders >= total, change = tendered - total (underpayment rejected, no
+        // piutang support yet). Non-cash (QRIS/transfer/card): the transaction is settled for the
+        // exact total by the payment rail, so paid = total and change = 0 regardless of whatever
+        // `paid` the client sent — otherwise a client could record a phantom change on a non-cash sale.
+        $isCash = ($method->type === 'cash');
+        if ($isCash) {
+            if ($data['paid'] < $total) {
+                return response()->json(['message' => 'Jumlah bayar kurang dari total belanja.'], 422);
+            }
+            $paid = (float) $data['paid'];
+            $change = max(0.0, $paid - $total);
+        } else {
+            $paid = (float) $total;
+            $change = 0.0;
         }
 
         $productTable = config('sid.product.table'); $pc = config('sid.product.columns');
@@ -82,7 +99,7 @@ final class SaleController
         $cashier = $request->user()?->getKey();
 
         try {
-            $result = DB::transaction(function () use ($data, $idempotencyKey, $subtotal, $discountTotal, $total, $productTable, $pc, $saleTable, $sc, $itemTable, $ic, $customerTable, $cc, $cashier) {
+            $result = DB::transaction(function () use ($data, $method, $idempotencyKey, $subtotal, $discountTotal, $total, $paid, $change, $productTable, $pc, $saleTable, $sc, $itemTable, $ic, $customerTable, $cc, $cashier) {
                 // Lock every line's product row once; the lock is held for the whole transaction.
                 $products = [];
                 foreach ($data['lines'] as $line) {
@@ -106,9 +123,12 @@ final class SaleController
                     $sc['id'] => $invoice, $sc['date'] => $today, $sc['customer_code'] => $data['customerId'],
                     $sc['customer_name'] => $customer->{$cc['name']} ?? 'Pelanggan Umum',
                     $sc['subtotal'] => $subtotal, $sc['discount'] => $discountTotal, $sc['total'] => $total,
-                    $sc['paid'] => $data['paid'], $sc['change'] => max(0, $data['paid'] - $total),
+                    $sc['paid'] => $paid, $sc['change'] => $change,
                     $sc['cashier'] => $cashier, $sc['operator'] => $cashier,
                     $sc['status'] => 'LUNAS', $sc['time'] => now()->format('H:i:s'), $sc['shift'] => '1',
+                    // Legacy-app compatibility: which kas account received the money. NULL when
+                    // the chosen method has no mapped legacy_kas_code (e.g. QRIS/transfer).
+                    $sc['kode_kas'] => $method->legacy_kas_code,
                 ]);
 
                 foreach (array_values($data['lines']) as $i => $line) {
@@ -122,6 +142,16 @@ final class SaleController
                     ]);
                     DB::table($productTable)->where($pc['id'], $line['productId'])->decrement($pc['stock'], $line['qty']);
                 }
+
+                // One payment row per sale for v1 (amount = full total). Written INSIDE this
+                // transaction so it is atomic with the sale/stock rows and rolls back together
+                // on the idempotency-key violation below — a replayed request never double-inserts.
+                // method_name is denormalized so the recap stays stable if the method is later
+                // renamed/deleted. Multi-row-per-sale capable (see app_sale_payments migration).
+                DB::table('app_sale_payments')->insert([
+                    'sale_id' => $invoice, 'method_code' => $method->code, 'method_name' => $method->name,
+                    'amount' => $total, 'reference' => $data['paymentRef'] ?? null, 'created_at' => now(),
+                ]);
 
                 // Unique PK on idempotency_key: if a concurrent duplicate request already committed
                 // (raced past the pre-check above), this insert throws and the whole transaction —

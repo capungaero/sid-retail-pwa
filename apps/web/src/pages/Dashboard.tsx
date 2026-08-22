@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, CircleDollarSign, PackageCheck, ReceiptText, TriangleAlert } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, CircleDollarSign, PackageCheck, ReceiptText, TriangleAlert, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { listProducts, listPurchaseOrders, listReceivables, listSales } from '../lib/api';
-import { lowStockProducts, summarizeSales } from '../lib/reports';
+import { getDailyRecap, listProducts, listPurchaseOrders, listReceivables, listSales } from '../lib/api';
+import { lowStockProducts, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { receivableOutstanding } from '../lib/finance';
 import { money, number } from '../lib/money';
-import type { Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
+import type { DailyRecap, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 const todayLabel = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
 
@@ -25,6 +25,7 @@ export function Dashboard() {
   // 0 = periode berjalan (sampai hari ini); 1 = satu periode ke belakang, dst. Direset
   // ke 0 setiap ganti tab supaya gak "nyangkut" di masa lalu waktu pindah rentang.
   const [chartOffset, setChartOffset] = useState(0);
+  const [recap, setRecap] = useState<DailyRecap | null>(null);
   function selectRange(range: typeof chartRange) { setChartRange(range); setChartOffset(0); }
   useEffect(() => {
     Promise.all([listSales(), listProducts(), listPurchaseOrders(), listReceivables()])
@@ -32,6 +33,9 @@ export function Dashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat ringkasan'))
       .finally(() => setLoading(false));
   }, []);
+  // Today's revenue split per payment method (best-effort; failure just hides the card).
+  useEffect(() => { getDailyRecap().then(setRecap).catch(() => setRecap(null)); }, []);
+  const recapRows = useMemo(() => recap ? withMethodPercentages(recap.byMethod, recap.totalRevenue) : [], [recap]);
 
   const todayKey = new Date().toISOString().slice(0, 10);
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey), [sales, todayKey]);
@@ -124,7 +128,10 @@ export function Dashboard() {
         <li><span className="dot red" /><div><strong>{number.format(negativeStock)} stok negatif</strong><span>Lakukan rekonsiliasi stok</span></div></li>
         <li><span className="dot amber" /><div><strong>{number.format(low.length)} barang di bawah minimum</strong><span>Siapkan usulan pembelian</span></div></li>
         <li><span className="dot blue" /><div><strong>{number.format(overdueReceivables.length)} piutang jatuh tempo</strong><span>Total {money.format(overdueTotal)}</span></div></li>
-      </ul></section></div>
+      </ul>
+      <div className="panel-heading" style={{ marginTop: 18 }}><div><h2>Pembayaran hari ini</h2><p>Per metode</p></div><Wallet /></div>
+      {!recapRows.length ? <p className="muted">Belum ada penjualan hari ini.</p> : <ul className="recap-methods">{recapRows.map(r => <li key={r.methodCode}><span>{r.methodName}</span><span className="rm-track"><span className="rm-bar" style={{ width: `${Math.max(2, r.percent * 100)}%` }} /></span><strong className="mono">{money.format(r.amount)}</strong></li>)}</ul>}
+      </section></div>
     <section className="panel flush" style={{ marginTop: 12 }}>
       <div className="panel-heading" style={{ padding: '16px 16px 0' }}><div><h2>Riwayat transaksi</h2><p>{filteredHistory.length} transaksi cocok filter</p></div></div>
       <div className="table-tools">

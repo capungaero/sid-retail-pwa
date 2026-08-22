@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withinRange } from './reports';
-import type { CashLedgerEntry, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
+import { buildDailyRecap, calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import type { CashLedgerEntry, DailyMethodRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
   const createdAt = '2026-08-13T10:00:00.000Z';
@@ -101,6 +101,49 @@ describe('summarizePayablesBySupplier', () => {
       { id: 'sup-1', name: 'Sumber Makmur', total: 1500, outstanding: 1100 },
       { id: 'sup-2', name: 'Tirta Jaya', total: 200, outstanding: 0 }
     ]);
+  });
+});
+
+describe('buildDailyRecap', () => {
+  const sales = [
+    { invoice: 'INV-1', total: 10000, createdAt: '2026-08-22T09:00:00.000Z' },
+    { invoice: 'INV-2', total: 5000, createdAt: '2026-08-22T10:00:00.000Z' },
+    { invoice: 'INV-3', total: 3000, createdAt: '2026-08-22T11:00:00.000Z' }, // untracked (no payment row)
+    { invoice: 'INV-OTHER', total: 999, createdAt: '2026-08-21T09:00:00.000Z' } // different day
+  ];
+  const payments = [
+    { saleId: 'INV-1', methodCode: 'CASH', methodName: 'Tunai', amount: 10000 },
+    { saleId: 'INV-2', methodCode: 'QRIS', methodName: 'QRIS', amount: 5000 }
+  ];
+  it('groups by method and buckets untracked sales so byMethod reconciles with totalRevenue', () => {
+    const recap = buildDailyRecap('2026-08-22', sales, payments);
+    expect(recap.totalRevenue).toBe(18000);
+    expect(recap.transactionCount).toBe(3);
+    const sum = recap.byMethod.reduce((s, m) => s + m.amount, 0);
+    expect(sum).toBe(recap.totalRevenue);
+    const untracked = recap.byMethod.find(m => m.methodCode === UNTRACKED_METHOD_CODE);
+    expect(untracked).toEqual({ methodCode: UNTRACKED_METHOD_CODE, methodName: 'Lainnya / tidak tercatat', count: 1, amount: 3000 });
+  });
+  it('sorts methods by amount descending', () => {
+    const recap = buildDailyRecap('2026-08-22', sales, payments);
+    expect(recap.byMethod.map(m => m.methodCode)).toEqual(['CASH', 'QRIS', UNTRACKED_METHOD_CODE]);
+  });
+  it('returns an empty breakdown for a day with no sales', () => {
+    const recap = buildDailyRecap('2026-08-01', sales, payments);
+    expect(recap).toEqual({ date: '2026-08-01', totalRevenue: 0, transactionCount: 0, byMethod: [] });
+  });
+});
+
+describe('withMethodPercentages', () => {
+  const byMethod: DailyMethodRecap[] = [
+    { methodCode: 'CASH', methodName: 'Tunai', count: 1, amount: 7500 },
+    { methodCode: 'QRIS', methodName: 'QRIS', count: 1, amount: 2500 }
+  ];
+  it('computes each method share of the total revenue', () => {
+    expect(withMethodPercentages(byMethod, 10000).map(m => m.percent)).toEqual([0.75, 0.25]);
+  });
+  it('returns zero percentages when there is no revenue', () => {
+    expect(withMethodPercentages(byMethod, 0).every(m => m.percent === 0)).toBe(true);
   });
 });
 

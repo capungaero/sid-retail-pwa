@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { CirclePlus, DatabaseBackup, Printer, RefreshCw, X } from 'lucide-react';
-import { backupNow, getPrinterConfig, getRolePermissions, getStoreProfile, isDemoMode, listAuditLog, listUserAccounts, savePrinterConfig, saveRolePermissions, saveStoreProfile, saveUserAccount, testPrint } from '../lib/api';
+import { CirclePlus, DatabaseBackup, Printer, RefreshCw, Trash2, X } from 'lucide-react';
+import { backupNow, deletePaymentMethod, getPrinterConfig, getRolePermissions, getStoreProfile, isDemoMode, listAuditLog, listPaymentMethods, listUserAccounts, savePaymentMethod, savePrinterConfig, saveRolePermissions, saveStoreProfile, saveUserAccount, testPrint } from '../lib/api';
 import { openBlankPreviewPopup, openReceiptPreviewPopup } from '../lib/print';
 import { formatAuditEntry, togglePermission, validateStoreProfile } from '../lib/settings';
-import type { AuditLogEntry, PaperWidth, PermissionKey, PrinterConfig, PrinterConnectionType, RolePermissions, StoreProfile, UserAccount, UserRole } from '../types';
+import type { AuditLogEntry, PaperWidth, PaymentMethod, PaymentMethodType, PermissionKey, PrinterConfig, PrinterConnectionType, RolePermissions, StoreProfile, UserAccount, UserRole } from '../types';
 
 const TABS = [
   { key: 'profile', label: 'Profil toko & struk' },
   { key: 'users', label: 'Pengguna & hak akses' },
+  { key: 'payment-methods', label: 'Metode pembayaran' },
   { key: 'printer', label: 'Printer thermal' },
   { key: 'backup', label: 'Backup & audit log' }
 ] as const;
@@ -43,6 +44,7 @@ export function Settings() {
     <div className="tabs" role="tablist" aria-label="Sub modul Pengaturan">{TABS.map(t => <button key={t.key} role="tab" aria-selected={tab === t.key} className={`tab-button ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>)}</div>
     {tab === 'profile' && <ProfileTab />}
     {tab === 'users' && <UsersTab />}
+    {tab === 'payment-methods' && <PaymentMethodsTab />}
     {tab === 'printer' && <PrinterTab />}
     {tab === 'backup' && <BackupTab />}
   </div>;
@@ -144,6 +146,70 @@ function UserModal({ onClose, onSaved }: { onClose: () => void; onSaved: (u: Use
     <label>Username<input value={username} onChange={e => setUsername(e.target.value)} /></label>
     <div className="form-grid">
       <label>Peran<select value={role} onChange={e => setRole(e.target.value as UserRole)}>{ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
+      <label>Status<select value={active ? '1' : '0'} onChange={e => setActive(e.target.value === '1')}><option value="1">Aktif</option><option value="0">Nonaktif</option></select></label>
+    </div>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</button></div>
+  </section></div>;
+}
+
+const METHOD_TYPE_LABEL: Record<PaymentMethodType, string> = { cash: 'Tunai', credit: 'Kartu Kredit', transfer: 'Transfer', qris: 'QRIS', other: 'Lainnya' };
+const METHOD_TYPES: PaymentMethodType[] = ['cash', 'credit', 'transfer', 'qris', 'other'];
+
+function PaymentMethodsTab() {
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [editing, setEditing] = useState<PaymentMethod | null | 'new'>(null); const [busyId, setBusyId] = useState('');
+  const load = () => { setLoading(true); setError(''); listPaymentMethods().then(setMethods).catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat metode pembayaran')).finally(() => setLoading(false)); };
+  useEffect(load, []);
+  async function toggleActive(m: PaymentMethod) {
+    setBusyId(m.id); setError('');
+    try { await savePaymentMethod({ id: m.id, code: m.code, name: m.name, type: m.type, legacyKasCode: m.legacyKasCode ?? null, active: !m.active, sortOrder: m.sortOrder }); load(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal mengubah status metode'); }
+    finally { setBusyId(''); }
+  }
+  async function remove(m: PaymentMethod) {
+    if (!confirm(`Hapus metode pembayaran "${m.name}"? Transaksi lama tetap tercatat dengan nama metode ini.`)) return;
+    setBusyId(m.id); setError('');
+    try { await deletePaymentMethod(m.id); load(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus metode'); }
+    finally { setBusyId(''); }
+  }
+  return <>
+    <section className="panel flush">
+      <div className="table-tools"><h2>Metode pembayaran</h2><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setEditing('new')}><CirclePlus /> Tambah metode</button></div>
+      <p className="muted" style={{ padding: '0 20px' }}>Metode aktif tampil di kasir saat pembayaran. Urutan tampil mengikuti nilai "Urutan" terkecil. Kode kas legacy (opsional) menautkan metode ke akun kas aplikasi lama.</p>
+      {error && <div className="notice error" role="alert">{error}</div>}
+      {loading ? <div className="empty-state">Memuat metode pembayaran…</div> : !methods.length ? <div className="empty-state">Belum ada metode pembayaran.</div> : <div className="table-wrap"><table><thead><tr><th className="numeric">Urutan</th><th>Nama</th><th>Kode</th><th>Jenis</th><th>Kode kas legacy</th><th>Status</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{methods.map(m => <tr key={m.id}>
+        <td className="numeric mono">{m.sortOrder}</td><td>{m.name}</td><td className="mono">{m.code}</td><td>{METHOD_TYPE_LABEL[m.type]}</td><td className="mono">{m.legacyKasCode || '—'}</td>
+        <td><span className={`status ${m.active ? 'success' : ''}`}>{m.active ? 'Aktif' : 'Nonaktif'}</span></td>
+        <td><div className="row-actions"><button className="button ghost" onClick={() => setEditing(m)} disabled={busyId === m.id}>Edit</button><button className="button secondary" onClick={() => toggleActive(m)} disabled={busyId === m.id}>{m.active ? 'Nonaktifkan' : 'Aktifkan'}</button><button className="icon-button danger" onClick={() => remove(m)} disabled={busyId === m.id} aria-label={`Hapus ${m.name}`}><Trash2 /></button></div></td>
+      </tr>)}</tbody></table></div>}
+    </section>
+    {editing && <PaymentMethodModal method={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+  </>;
+}
+
+function PaymentMethodModal({ method, onClose, onSaved }: { method: PaymentMethod | null; onClose: () => void; onSaved: () => void }) {
+  const [code, setCode] = useState(method?.code ?? ''); const [name, setName] = useState(method?.name ?? ''); const [type, setType] = useState<PaymentMethodType>(method?.type ?? 'cash');
+  const [legacyKasCode, setLegacyKasCode] = useState(method?.legacyKasCode ?? ''); const [active, setActive] = useState(method?.active ?? true); const [sortOrder, setSortOrder] = useState(method?.sortOrder ?? 0);
+  const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  const modalRef = useModalTrap(onClose);
+  async function submit() {
+    if (!code.trim()) return setError('Kode metode wajib diisi.');
+    if (!/^[A-Za-z0-9_-]+$/.test(code.trim())) return setError('Kode hanya boleh huruf, angka, - dan _.');
+    if (!name.trim()) return setError('Nama metode wajib diisi.');
+    setSaving(true); setError('');
+    try { await savePaymentMethod({ id: method?.id, code: code.trim(), name: name.trim(), type, legacyKasCode: legacyKasCode.trim() || null, active, sortOrder }); onSaved(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan metode'); setSaving(false); }
+  }
+  return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="method-title">
+    <div className="modal-heading"><div><p className="eyebrow">Metode pembayaran</p><h2 id="method-title">{method ? 'Edit metode' : 'Tambah metode'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
+    <div className="form-grid">
+      <label>Kode<input data-autofocus="true" value={code} onChange={e => setCode(e.target.value)} placeholder="CASH / QRIS" /></label>
+      <label>Nama tampilan<input value={name} onChange={e => setName(e.target.value)} placeholder="Tunai / QRIS" /></label>
+      <label>Jenis<select value={type} onChange={e => setType(e.target.value as PaymentMethodType)}>{METHOD_TYPES.map(t => <option key={t} value={t}>{METHOD_TYPE_LABEL[t]}</option>)}</select></label>
+      <label>Kode kas legacy (opsional)<input value={legacyKasCode} onChange={e => setLegacyKasCode(e.target.value)} placeholder="Contoh: KT" /></label>
+      <label>Urutan<input type="number" min={0} value={sortOrder} onChange={e => setSortOrder(Number(e.target.value))} /></label>
       <label>Status<select value={active ? '1' : '0'} onChange={e => setActive(e.target.value === '1')}><option value="1">Aktif</option><option value="0">Nonaktif</option></select></label>
     </div>
     {error && <div className="notice error" role="alert">{error}</div>}

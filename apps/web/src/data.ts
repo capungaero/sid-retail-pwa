@@ -1,4 +1,4 @@
-import type { AttendanceEntry, AuditLogEntry, CashLedgerEntry, Customer, Employee, LeaveRequest, Payable, PaymentInstrument, PrinterConfig, Product, PurchaseOrder, Receivable, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount } from './types';
+import type { AttendanceEntry, AuditLogEntry, CashLedgerEntry, Customer, Employee, LeaveRequest, Payable, PaymentInstrument, PaymentMethod, PrinterConfig, Product, PurchaseOrder, Receivable, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount } from './types';
 
 export const demoProducts: Product[] = [
   { id: '1', code: 'BRG-0001', barcode: '8991002101651', name: 'Air Mineral 600 ml', category: 'Minuman', stock: 84, minStock: 24, cost: 2100, active: true, units: [{ name: 'Botol', multiplier: 1, price: 3500 }, { name: 'Dus', multiplier: 24, price: 78000 }] },
@@ -69,6 +69,24 @@ export const demoSalesLog: SaleRecord[] = [
     { productId: '3', productName: 'Kopi Sachet Original', unit: 'Renceng', qty: 4, price: 20000, discount: 2000 },
     { productId: '4', productName: 'Sabun Mandi 80 g', unit: 'Pcs', qty: 10, price: 4200, discount: 0 }
   ], total: 120000, paid: 150000, change: 30000, createdAt: '2026-08-14T11:00:00.000Z' }
+];
+
+// Configurable payment methods (Pengaturan > Metode pembayaran). Mirrors the 4 defaults the
+// backend migration seeds. CASH maps to legacy kas account 'KT' (KAS TOKO).
+export const demoPaymentMethods: PaymentMethod[] = [
+  { id: '1', code: 'CASH', name: 'Tunai', type: 'cash', legacyKasCode: 'KT', active: true, sortOrder: 1 },
+  { id: '2', code: 'CREDIT', name: 'Kartu Kredit', type: 'credit', legacyKasCode: null, active: true, sortOrder: 2 },
+  { id: '3', code: 'TRANSFER', name: 'Transfer', type: 'transfer', legacyKasCode: null, active: true, sortOrder: 3 },
+  { id: '4', code: 'QRIS', name: 'QRIS', type: 'qris', legacyKasCode: null, active: true, sortOrder: 4 }
+];
+
+// One row per payment applied to a sale (denormalized method snapshot). Seeded for the three
+// demo sales above so the daily recap has a per-method breakdown; completeSale() appends here.
+export type DemoSalePayment = { saleId: string; methodCode: string; methodName: string; amount: number; reference?: string; createdAt: string };
+export const demoSalePayments: DemoSalePayment[] = [
+  { saleId: 'DEMO-00000001', methodCode: 'CASH', methodName: 'Tunai', amount: 27500, createdAt: '2026-08-11T09:15:00.000Z' },
+  { saleId: 'DEMO-00000002', methodCode: 'TRANSFER', methodName: 'Transfer', amount: 152000, reference: 'TRX-99881', createdAt: '2026-08-13T14:40:00.000Z' },
+  { saleId: 'DEMO-00000003', methodCode: 'QRIS', methodName: 'QRIS', amount: 120000, reference: 'QR-002210', createdAt: '2026-08-14T11:00:00.000Z' }
 ];
 
 export const demoInstruments: PaymentInstrument[] = [

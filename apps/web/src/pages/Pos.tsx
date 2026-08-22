@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArchiveRestore, Banknote, Check, ChevronDown, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, X } from 'lucide-react';
-import { completeSale, getPrinterConfig, getStoreProfile, listCustomers, listProducts, listSales } from '../lib/api';
+import { completeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCustomers, listProducts, listSales } from '../lib/api';
 import { money, number } from '../lib/money';
 import { receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import type { CartLine, Customer, HeldSale, PaperWidth, Product, SaleRecord, StoreProfile, Unit } from '../types';
+import type { CartLine, Customer, HeldSale, PaperWidth, PaymentMethod, Product, SaleRecord, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
 const general: Customer = { id: 'general', code: 'UMUM', name: 'Pelanggan Umum', tier: 'retail' };
@@ -115,21 +115,37 @@ function useReceiptPreview() {
 }
 function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer;cart:CartLine[];total:number;onClose:()=>void;onDone:(invoice:string,printFailed:boolean)=>void}) {
   const [paid,setPaid]=useState(total); const [saving,setSaving]=useState(false); const [error,setError]=useState('');
+  const [methods,setMethods]=useState<PaymentMethod[]>([]); const [method,setMethod]=useState<PaymentMethod|null>(null);
+  const [methodsLoading,setMethodsLoading]=useState(true); const [methodsError,setMethodsError]=useState(''); const [methodsRetry,setMethodsRetry]=useState(0);
+  const [reference,setReference]=useState('');
   const idempotencyKey=useRef(crypto.randomUUID());
   const { previewAndPrint, modal } = useReceiptPreview();
+  useEffect(()=>{let active=true;setMethodsLoading(true);setMethodsError('');getPaymentMethods().then(list=>{if(!active)return;setMethods(list);setMethod(current=>current??list[0]??null);}).catch(err=>{if(active)setMethodsError(err instanceof Error?err.message:'Metode pembayaran gagal dimuat');}).finally(()=>{if(active)setMethodsLoading(false);});return()=>{active=false;};},[methodsRetry]);
+  const isCash=method?.type==='cash';
+  // Non-cash methods are paid in full (no change/kembalian); cash keeps the received-amount flow.
+  const effectivePaid=isCash?paid:total;
+  function pickMethod(m:PaymentMethod){setMethod(m);setError('');if(m.type==='cash')setPaid(total);else{setPaid(total);setReference('');}}
   async function submit(){
-    if(paid<total)return setError('Uang diterima kurang dari total belanja.');
+    if(!method)return setError('Pilih metode pembayaran.');
+    if(isCash&&paid<total)return setError('Uang diterima kurang dari total belanja.');
     if(saving)return;
     setSaving(true);setError('');
     try{
-      const payload={customerId:customer.id,lines:cart.map(l=>({productId:l.product.id,unit:l.unit.name,qty:l.qty,price:l.unit.price,discount:l.discount})),paid,idempotencyKey:idempotencyKey.current};
+      const trimmedRef=reference.trim();
+      const payload={customerId:customer.id,lines:cart.map(l=>({productId:l.product.id,unit:l.unit.name,qty:l.qty,price:l.unit.price,discount:l.discount})),paid:effectivePaid,idempotencyKey:idempotencyKey.current,paymentMethod:method.code,paymentRef:!isCash&&trimmedRef?trimmedRef:undefined};
       const receiptLines=cart.map(l=>({productName:l.product.name,qty:l.qty,unitName:l.unit.name,unitPrice:l.unit.price,discount:l.discount}));
-      const result=await submitCheckout(payload,{customer,lines:receiptLines,paid,total},{ save:completeSale, print: r => previewAndPrint(r) });
+      const result=await submitCheckout(payload,{customer,lines:receiptLines,paid:effectivePaid,total,methodName:method.name,reference:!isCash&&trimmedRef?trimmedRef:undefined},{ save:completeSale, print: r => previewAndPrint(r) });
       onDone(result.invoice,result.printFailed);
     }catch(e){setError(e instanceof Error?e.message:'Transaksi gagal disimpan');setSaving(false)}
   }
   if (modal) return modal;
-  return <Modal title="Pembayaran" onClose={onClose}><div className="payment-total"><span>Total pembayaran</span><strong>{money.format(total)}</strong></div><label>Uang diterima<input data-autofocus="true" className="money-input" type="number" min={total} value={paid} onChange={e=>setPaid(Number(e.target.value))} onFocus={e=>e.currentTarget.select()} /></label><div className="quick-cash">{[total,Math.ceil(total/10000)*10000,Math.ceil(total/50000)*50000].filter((v,i,a)=>a.indexOf(v)===i).map(v=><button key={v} onClick={()=>setPaid(v)}>{money.format(v)}</button>)}</div><div className="change"><span>Kembalian</span><strong>{money.format(Math.max(0,paid-total))}</strong></div>{error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={saving || paid<total}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }
+  const submitDisabled=saving||methodsLoading||!method||(isCash&&paid<total);
+  return <Modal title="Pembayaran" onClose={onClose}><div className="payment-total"><span>Total pembayaran</span><strong>{money.format(total)}</strong></div>
+    <label>Metode pembayaran</label>
+    {methodsLoading?<div className="empty-compact" role="status">Memuat metode…</div>:methodsError?<div className="inline-recovery" role="alert"><span>{methodsError}</span><button className="button secondary" onClick={()=>setMethodsRetry(v=>v+1)}>Coba lagi</button></div>:!methods.length?<div className="notice warning" role="alert">Belum ada metode pembayaran aktif. Tambahkan di Pengaturan.</div>:<div className="pay-method-picker" role="group" aria-label="Metode pembayaran">{methods.map((m,i)=><button key={m.id} type="button" data-autofocus={i===0?'true':undefined} className={method?.code===m.code?'active':''} aria-pressed={method?.code===m.code} onClick={()=>pickMethod(m)}>{m.name}</button>)}</div>}
+    {method&&isCash&&<><label>Uang diterima<input className="money-input" type="number" min={total} value={paid} onChange={e=>setPaid(Number(e.target.value))} onFocus={e=>e.currentTarget.select()} /></label><div className="quick-cash">{[total,Math.ceil(total/10000)*10000,Math.ceil(total/50000)*50000].filter((v,i,a)=>a.indexOf(v)===i).map(v=><button key={v} onClick={()=>setPaid(v)}>{money.format(v)}</button>)}</div><div className="change"><span>Kembalian</span><strong>{money.format(Math.max(0,paid-total))}</strong></div></>}
+    {method&&!isCash&&<label>Nomor referensi (opsional)<input className="money-input" type="text" maxLength={64} value={reference} onChange={e=>setReference(e.target.value)} placeholder="No. QRIS / transfer / approval" /></label>}
+    {error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={submitDisabled}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }
 
 // View-only for now: editing a saved sale (adjusting lines/qty/price after the fact, with the
 // stock/ledger implications that implies) needs its own carefully-designed, admin-gated backend

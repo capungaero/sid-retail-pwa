@@ -1,10 +1,11 @@
-import { demoAttendanceEntries, demoAuditLog, demoCashEntries, demoCustomers, demoEmployees, demoInstruments, demoLeaveRequests, demoPayables, demoPrinterConfig, demoProducts, demoPurchaseOrders, demoReceivables, demoRolePermissions, demoSalesLog, demoShiftAssignments, demoShiftDefs, demoStockMovements, demoStoreProfile, demoSuppliers, demoUserAccounts } from '../data';
+import { demoAttendanceEntries, demoAuditLog, demoCashEntries, demoCustomers, demoEmployees, demoInstruments, demoLeaveRequests, demoPayables, demoPaymentMethods, demoPrinterConfig, demoProducts, demoPurchaseOrders, demoReceivables, demoRolePermissions, demoSalePayments, demoSalesLog, demoShiftAssignments, demoShiftDefs, demoStockMovements, demoStoreProfile, demoSuppliers, demoUserAccounts } from '../data';
 import { applyReceipt, poStatusAfterReceipt, signedReturnQty } from './inventory';
 import { canTransitionInstrument, capPayment, nextCashBalance, payableOutstanding, receivableOutstanding } from './finance';
 import { computeAttendanceStatus, findScheduledShift } from './hrd';
+import { buildDailyRecap } from './reports';
 import { validateStoreProfile } from './settings';
 import { openReceiptPreviewPopup } from './print';
-import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, Employee, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentPayload, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
+import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, DailyRecap, Employee, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
 
 const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') as string | undefined;
 export const isDemoMode = !baseUrl;
@@ -133,6 +134,8 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
     const invoice = `DEMO-${Date.now().toString().slice(-8)}`;
     const total = payload.lines.reduce((sum, line) => sum + line.qty * line.price - line.discount, 0);
     const customer = demoCustomers.find(c => c.id === payload.customerId);
+    const method = demoPaymentMethods.find(m => m.code === payload.paymentMethod);
+    demoSalePayments.push({ saleId: invoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: total, reference: payload.paymentRef, createdAt: new Date().toISOString() });
     demoSalesLog.unshift({
       id: crypto.randomUUID(),
       invoice,
@@ -152,6 +155,58 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
 export async function listSales(): Promise<SaleRecord[]> {
   if (!baseUrl) return demoSalesLog;
   return request('/sales');
+}
+
+// Active payment methods for checkout (cashier-facing, gated pos:read on the API).
+export async function getPaymentMethods(): Promise<PaymentMethod[]> {
+  if (!baseUrl) return demoPaymentMethods.filter(m => m.active).sort((a, b) => a.sortOrder - b.sortOrder);
+  return request('/payment-methods');
+}
+
+// All payment methods incl. inactive — for the Pengaturan admin screen (gated settings:read).
+export async function listPaymentMethods(): Promise<PaymentMethod[]> {
+  if (!baseUrl) return [...demoPaymentMethods].sort((a, b) => a.sortOrder - b.sortOrder);
+  return request('/settings/payment-methods');
+}
+
+export async function savePaymentMethod(input: { id?: string; code: string; name: string; type: PaymentMethodType; legacyKasCode?: string | null; active: boolean; sortOrder: number }): Promise<PaymentMethod> {
+  if (!baseUrl) {
+    const code = input.code.trim().toUpperCase();
+    if (!code) throw new Error('Kode metode wajib diisi.');
+    if (!input.name.trim()) throw new Error('Nama metode wajib diisi.');
+    const clash = demoPaymentMethods.find(m => m.code === code && m.id !== input.id);
+    if (clash) throw new Error('Kode metode sudah dipakai.');
+    if (input.id) {
+      const method = demoPaymentMethods.find(m => m.id === input.id);
+      if (!method) throw new Error('Metode pembayaran tidak ditemukan');
+      Object.assign(method, { code, name: input.name, type: input.type, legacyKasCode: input.legacyKasCode || null, active: input.active, sortOrder: input.sortOrder });
+      logAudit('payment-method-update', `Metode pembayaran diperbarui: ${method.name} (${method.code}).`);
+      return method;
+    }
+    const method: PaymentMethod = { id: crypto.randomUUID(), code, name: input.name, type: input.type, legacyKasCode: input.legacyKasCode || null, active: input.active, sortOrder: input.sortOrder };
+    demoPaymentMethods.push(method);
+    logAudit('payment-method-update', `Metode pembayaran ditambahkan: ${method.name} (${method.code}).`);
+    return method;
+  }
+  return request(`/settings/payment-methods${input.id ? `/${input.id}` : ''}`, { method: input.id ? 'PUT' : 'POST', body: JSON.stringify(input) });
+}
+
+export async function deletePaymentMethod(id: string): Promise<void> {
+  if (!baseUrl) {
+    const index = demoPaymentMethods.findIndex(m => m.id === id);
+    if (index < 0) throw new Error('Metode pembayaran tidak ditemukan');
+    const [removed] = demoPaymentMethods.splice(index, 1);
+    logAudit('payment-method-update', `Metode pembayaran dihapus: ${removed.name} (${removed.code}).`);
+    return;
+  }
+  await request(`/settings/payment-methods/${id}`, { method: 'DELETE' });
+}
+
+// Per-payment-method revenue recap for one day (defaults to today).
+export async function getDailyRecap(date?: string): Promise<DailyRecap> {
+  const day = date ?? new Date().toISOString().slice(0, 10);
+  if (!baseUrl) return buildDailyRecap(day, demoSalesLog, demoSalePayments);
+  return request(`/reports/daily?date=${encodeURIComponent(day)}`);
 }
 
 export async function listSuppliers(query = ''): Promise<Supplier[]> {

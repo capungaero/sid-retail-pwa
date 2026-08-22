@@ -4,9 +4,11 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CashController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\PayableController;
+use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\PaymentInstrumentController;
 use App\Http\Controllers\PrinterConfigController;
 use App\Http\Controllers\ProductController;
@@ -35,6 +37,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/customers', CustomerController::class)->middleware('ability:pos:read');
     Route::post('/sales', SaleController::class)->middleware('ability:pos:write');
     Route::get('/sales', [SaleController::class, 'index'])->middleware('ability:pos:read');
+    Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->middleware('ability:pos:read');
+    Route::get('/reports/daily', DailyReportController::class)->middleware('ability:pos:read');
     Route::get('/hrd/employees', EmployeeController::class)->middleware('ability:hrd:read');
     Route::get('/hrd/shifts', ShiftController::class)->middleware('ability:hrd:read');
     Route::get('/hrd/shift-assignments', [ShiftAssignmentController::class, 'index'])->middleware('ability:hrd:read');
@@ -66,6 +70,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/settings/printer', [PrinterConfigController::class, 'show'])->middleware('ability:settings:read');
     Route::put('/settings/printer', [PrinterConfigController::class, 'update'])->middleware('ability:settings:write');
     Route::post('/settings/printer/test-print', [PrinterConfigController::class, 'testPrint'])->middleware('ability:settings:write');
+    Route::get('/settings/payment-methods', [PaymentMethodController::class, 'adminIndex'])->middleware('ability:settings:read');
+    Route::post('/settings/payment-methods', [PaymentMethodController::class, 'store'])->middleware('ability:settings:write');
+    Route::put('/settings/payment-methods/{id}', [PaymentMethodController::class, 'update'])->middleware('ability:settings:write');
+    Route::delete('/settings/payment-methods/{id}', [PaymentMethodController::class, 'destroy'])->middleware('ability:settings:write');
     Route::get('/settings/audit-log', AuditLogController::class)->middleware('ability:settings:read');
     Route::post('/settings/backup', SettingsBackupController::class)->middleware('ability:settings:write');
 
