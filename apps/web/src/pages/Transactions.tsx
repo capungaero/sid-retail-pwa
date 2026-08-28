@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, RefreshCw, Search, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, RefreshCw, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getStoredUser, listSales } from '../lib/api';
 import { summarizeSales } from '../lib/reports';
 import { money, number } from '../lib/money';
+import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import type { SaleRecord } from '../types';
 
 // karyawan.level for an admin account (see config/sid.php's level_role_map on the API side) —
@@ -47,26 +48,4 @@ export function Transactions() {
     </section>
     {detail && <SaleStockDetailModal sale={detail} onClose={() => setDetail(null)} />}
   </div>;
-}
-
-// Admin-only: per line item, how much stock the product had before/after this sale. stockBefore
-// is a projection from current stock (see SaleLine's type comment), not a stored historical value.
-function SaleStockDetailModal({ sale, onClose }: { sale: SaleRecord; onClose: () => void }) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    const keys = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', keys);
-    ref.current?.querySelector<HTMLElement>('button')?.focus();
-    return () => { document.removeEventListener('keydown', keys); previous?.focus(); };
-  }, [onClose]);
-  return <div className="modal-overlay" role="presentation"><section ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby="sale-stock-title">
-    <div className="modal-heading"><div><p className="eyebrow">Detail stok</p><h2 id="sale-stock-title">{sale.invoice}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
-    <p className="muted" style={{ marginTop: -8 }}>{new Date(sale.createdAt).toLocaleString('id-ID')} · Kasir {sale.cashierName || '—'} · {sale.customerName || 'Tanpa nama'}</p>
-    <div className="table-wrap"><table><thead><tr><th>Barang</th><th className="numeric">Stok awal</th><th className="numeric">Terjual</th><th className="numeric">Harga</th><th className="numeric">Sisa stok</th></tr></thead><tbody>
-      {sale.lines.map((l, i) => <tr key={i}><td>{l.productName}<br /><small className="muted">{l.unit}</small></td><td className="numeric mono">{l.stockBefore ?? '—'}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.qty * l.price - l.discount)}</td><td className="numeric mono">{l.stockAfter ?? '—'}</td></tr>)}
-    </tbody></table></div>
-    <div className="summary"><div className="grand-total"><span>Total penjualan</span><strong>{money.format(sale.total)}</strong></div></div>
-    <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Tutup</button></div>
-  </section></div>;
 }
