@@ -35,8 +35,13 @@ final class SaleController
             ->get([$ic['sale_id'], $ic['product_code'], $ic['product_name'], $ic['unit'], $ic['qty'], $ic['price'], $ic['discount_rupiah']])
             ->groupBy($ic['sale_id']);
 
+        // Cashier can be a legacy karyawan.kode OR an app_user_settings.id (uuid) — sales made by
+        // an account created via Pengaturan > Pengguna store that uuid in $sc['cashier'] instead.
+        // Look up both and merge; a karyawan match wins if a code somehow collided with a uuid.
         $cashierCodes = $sales->pluck($sc['cashier'])->filter()->unique()->values()->all();
         $cashiers = DB::table($employeeTable)->whereIn($ec['id'], $cashierCodes)->pluck($ec['name'], $ec['id']);
+        $appUserNames = DB::table('app_user_settings')->whereIn('id', $cashierCodes)->pluck('name', 'id');
+        $cashiers = $appUserNames->merge($cashiers);
 
         // Current stock per product referenced in this page of sales, used to show the detail
         // view's "sisa stok" / "stok awal". stockBefore is a projection (current stock + qty on

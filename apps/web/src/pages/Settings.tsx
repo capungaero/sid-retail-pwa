@@ -125,25 +125,29 @@ function UsersTab() {
       <p className="muted" style={{ padding: '0 20px' }}>{isDemoMode ? 'Pengaturan tampilan saja (view only) — belum menegakkan RBAC nyata di demo ini.' : 'Perubahan di sini langsung berlaku pada hak akses token login setiap peran.'}</p>
       {!permissions ? <div className="empty-state">Memuat hak akses…</div> : <div className="table-wrap"><table><thead><tr><th>Modul</th>{ROLES.map(r => <th key={r} className="numeric">{ROLE_LABEL[r]}</th>)}</tr></thead><tbody>{PERMISSIONS.map(key => <tr key={key}><td>{PERMISSION_LABEL[key]}</td>{ROLES.map(role => <td key={role} className="numeric"><input type="checkbox" aria-label={`${PERMISSION_LABEL[key]} — ${ROLE_LABEL[role]}`} checked={permissions[role].includes(key)} onChange={() => toggle(role, key)} /></td>)}</tr>)}</tbody></table></div>}
     </section>
-    {adding && <UserModal onClose={() => setAdding(false)} onSaved={u => { setUsers(current => [...current, u]); setAdding(false); }} />}
+    {adding && <UserModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
   </>;
 }
 
 function UserModal({ onClose, onSaved }: { onClose: () => void; onSaved: (u: UserAccount) => void }) {
   const [name, setName] = useState(''); const [username, setUsername] = useState(''); const [role, setRole] = useState<UserRole>('kasir'); const [active, setActive] = useState(true);
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
   const modalRef = useModalTrap(onClose);
   async function submit() {
     if (!name.trim()) return setError('Nama wajib diisi.');
     if (!username.trim()) return setError('Username wajib diisi.');
+    if (password.length < 6) return setError('Password minimal 6 karakter.');
     setSaving(true); setError('');
-    try { onSaved(await saveUserAccount({ name: name.trim(), username: username.trim(), role, active })); }
+    try { onSaved(await saveUserAccount({ name: name.trim(), username: username.trim(), role, active, password })); }
     catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan pengguna'); setSaving(false); }
   }
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="user-title">
     <div className="modal-heading"><div><p className="eyebrow">Pengguna</p><h2 id="user-title">Tambah pengguna</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <label>Nama<input data-autofocus="true" value={name} onChange={e => setName(e.target.value)} /></label>
     <label>Username<input value={username} onChange={e => setUsername(e.target.value)} /></label>
+    <label>Password<input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimal 6 karakter" /></label>
+    <p className="muted" style={{ marginTop: -8, fontSize: '.78rem' }}>Dipakai pengguna ini untuk login ke SID Retail.</p>
     <div className="form-grid">
       <label>Peran<select value={role} onChange={e => setRole(e.target.value as UserRole)}>{ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
       <label>Status<select value={active ? '1' : '0'} onChange={e => setActive(e.target.value === '1')}><option value="1">Aktif</option><option value="0">Nonaktif</option></select></label>

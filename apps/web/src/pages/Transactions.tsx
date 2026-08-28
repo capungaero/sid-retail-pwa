@@ -7,15 +7,16 @@ import { money, number } from '../lib/money';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import type { SaleRecord } from '../types';
 
-// karyawan.level for an admin account (see config/sid.php's level_role_map on the API side) —
-// the raw legacy code, not the mapped Pengaturan role key ('admin'), is what AuthUser.role holds.
-const ADMIN_LEVEL = 'ADM';
+// AuthUser.role is whatever the identity source returns verbatim: legacy karyawan logins carry
+// the raw karyawan.level code ('ADM'), while app_user_settings logins already carry the mapped
+// Pengaturan role key ('admin') — see AuthController::login's two branches.
+const ADMIN_ROLES = ['ADM', 'admin'];
 
 export function Transactions() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null);
-  const isAdmin = getStoredUser()?.role === ADMIN_LEVEL;
+  const isAdmin = ADMIN_ROLES.includes(getStoredUser()?.role ?? '');
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat transaksi')).finally(() => setLoading(false)); };
   useEffect(load, []);
 

@@ -485,9 +485,10 @@ export async function listUserAccounts(): Promise<UserAccount[]> {
   return request('/settings/users');
 }
 
-export async function saveUserAccount(input: { id?: string; name: string; username: string; role: UserRole; active: boolean }): Promise<UserAccount> {
+export async function saveUserAccount(input: { id?: string; name: string; username: string; role: UserRole; active: boolean; password?: string }): Promise<UserAccount> {
   if (!baseUrl) {
     if (!input.name.trim() || !input.username.trim()) throw new Error('Nama dan username wajib diisi.');
+    if (!input.id && (!input.password || input.password.length < 6)) throw new Error('Password minimal 6 karakter.');
     if (input.id) {
       const account = demoUserAccounts.find(u => u.id === input.id);
       if (!account) throw new Error('Pengguna tidak ditemukan');
