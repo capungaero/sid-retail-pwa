@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { Boxes, Building2, ChevronLeft, CircleDollarSign, ClipboardList, Gauge, LogOut, Menu, PackageSearch, ReceiptText, Settings, ShoppingCart, UsersRound, Wifi, WifiOff, X } from 'lucide-react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+import { Boxes, Building2, ChevronLeft, CircleDollarSign, ClipboardList, Gauge, LogOut, Menu, PackageSearch, ReceiptText, RefreshCw, Settings, ShoppingCart, UsersRound, Wifi, WifiOff, X } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
 import { Transactions } from './pages/Transactions';
 import { Products } from './pages/Products';
@@ -90,6 +91,28 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
   </div>;
 }
 
+// A POS kiosk tab can stay open for days without a hard reload, so the browser never re-checks
+// sw.js on its own. Without this, a cashier can be stuck running a build from before some
+// backend change (e.g. checkout starting to require a payment method) with no way to know why
+// their app is broken — the fix from their side is invisible (just "reload the page"), but they
+// have no signal telling them to. Polls hourly on top of vite-plugin-pwa's own checks and shows
+// a dismissible-by-action banner instead of forcing a reload, since an in-progress cart is only
+// held in memory and a forced reload mid-sale would lose it.
+function UpdateBanner() {
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW(_url, registration) {
+      if (!registration) return;
+      setInterval(() => { registration.update().catch(() => {}); }, 60 * 60 * 1000);
+    },
+  });
+  if (!needRefresh) return null;
+  return <div className="update-banner" role="status">
+    <RefreshCw aria-hidden="true" />
+    <span>Versi baru tersedia. Muat ulang saat tidak ada transaksi berjalan.</span>
+    <button className="button primary" onClick={() => updateServiceWorker(true)}>Muat ulang</button>
+  </div>;
+}
+
 export function App() {
   const [loggedIn, setLoggedIn] = useState(() => isDemoMode ? sessionStorage.getItem('sid-session') === 'demo' : Boolean(sessionStorage.getItem('sid-token')));
   // Rehydrated from sessionStorage (set alongside the token on login) so the topbar shows the
@@ -104,6 +127,6 @@ export function App() {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  if (!loggedIn) return <Login onLogin={authUser => { if (isDemoMode) sessionStorage.setItem('sid-session', 'demo'); setUser(authUser ?? null); setLoggedIn(true); }} />;
-  return <Shell user={user} onLogout={() => { sessionStorage.removeItem('sid-session'); setUser(null); void apiLogout(); setLoggedIn(false); }} />;
+  if (!loggedIn) return <><UpdateBanner /><Login onLogin={authUser => { if (isDemoMode) sessionStorage.setItem('sid-session', 'demo'); setUser(authUser ?? null); setLoggedIn(true); }} /></>;
+  return <><UpdateBanner /><Shell user={user} onLogout={() => { sessionStorage.removeItem('sid-session'); setUser(null); void apiLogout(); setLoggedIn(false); }} /></>;
 }

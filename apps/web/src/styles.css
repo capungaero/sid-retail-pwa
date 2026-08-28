@@ -11,3 +11,4 @@
 tr.row-clickable{cursor:pointer}tr.row-clickable:hover{background:#eff6ff}tr.row-clickable:focus-visible{outline:3px solid var(--ring);outline-offset:-3px}
 .link-button{background:none;border:0;padding:0;min-height:0;color:var(--primary);font-weight:600;text-decoration:underline;text-underline-offset:2px}.link-button:hover{color:var(--primary-hover)}
 .history-heading{flex-wrap:wrap;gap:10px}.history-heading span{font-size:1.05rem!important;font-weight:700;color:#172554!important}.history-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.history-search{min-height:38px;width:190px;flex:none}
+.update-banner{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 16px;background:#1e3a8a;color:#fff;font-size:.85rem;font-weight:600}.update-banner svg{width:18px;flex:none}.update-banner span{flex:1}.update-banner .button{min-height:32px;padding:0 12px}
