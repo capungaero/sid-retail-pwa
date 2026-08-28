@@ -135,7 +135,10 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
     const total = payload.lines.reduce((sum, line) => sum + line.qty * line.price - line.discount, 0);
     const customer = demoCustomers.find(c => c.id === payload.customerId);
     const method = demoPaymentMethods.find(m => m.code === payload.paymentMethod);
-    demoSalePayments.push({ saleId: invoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: total, reference: payload.paymentRef, createdAt: new Date().toISOString() });
+    const isDebt = !!payload.isDebt && payload.paid < total;
+    if (isDebt && !customer) throw new Error('Pilih pelanggan terdaftar untuk transaksi piutang, bukan Pelanggan Umum.');
+    demoSalePayments.push({ saleId: invoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: isDebt ? payload.paid : total, reference: payload.paymentRef, createdAt: new Date().toISOString() });
+    if (isDebt) demoReceivables.push({ id: crypto.randomUUID(), customerId: payload.customerId, customerName: customer!.name, reference: `P-${invoice}`, amount: total - payload.paid, payments: [], createdAt: new Date().toISOString() });
     demoSalesLog.unshift({
       id: crypto.randomUUID(),
       invoice,
@@ -322,6 +325,17 @@ export async function addPayablePayment(payableId: string, amount: number, note?
 export async function listReceivables(): Promise<Receivable[]> {
   if (!baseUrl) return demoReceivables;
   return request('/finance/receivables');
+}
+
+export async function createReceivable(customerId: string, amount: number, note?: string, idempotencyKey = crypto.randomUUID()): Promise<Receivable> {
+  if (!baseUrl) {
+    const customer = demoCustomers.find(c => c.id === customerId);
+    if (!customer) throw new Error('Pelanggan tidak ditemukan');
+    const receivable: Receivable = { id: crypto.randomUUID(), customerId, customerName: customer.name, reference: `MAN-${Date.now().toString().slice(-8)}`, amount, payments: [], createdAt: new Date().toISOString() };
+    demoReceivables.push(receivable);
+    return receivable;
+  }
+  return request('/finance/receivables', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ customerId, amount, note }) });
 }
 
 export async function addReceivablePayment(receivableId: string, amount: number, note?: string, idempotencyKey = crypto.randomUUID()): Promise<Receivable> {

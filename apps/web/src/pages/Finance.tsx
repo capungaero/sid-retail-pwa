@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CirclePlus, RefreshCw, X } from 'lucide-react';
-import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, listCashEntries, listInstruments, listPayables, listReceivables, updateInstrumentStatus } from '../lib/api';
+import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
+import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
 import { money } from '../lib/money';
-import type { CashDirection, CashLedgerEntry, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable } from '../types';
+import type { CashDirection, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable } from '../types';
 
 const TABS = [
   { key: 'cash', label: 'Kas masuk & keluar' },
@@ -130,18 +130,50 @@ function PayablePaymentModal({ payable, onClose, onSaved }: { payable: Payable; 
 }
 
 function ReceivableTab() {
-  const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [collecting, setCollecting] = useState<Receivable | null>(null);
+  const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [collecting, setCollecting] = useState<Receivable | null>(null); const [adding, setAdding] = useState(false);
   const load = () => { setLoading(true); setError(''); listReceivables().then(setReceivables).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const totalOutstanding = receivables.reduce((sum, r) => sum + receivableOutstanding(r), 0);
   return <>
     <section className="panel flush">
-      <div className="table-tools"><h2>Piutang pelanggan</h2><span className="status">Total sisa: {money.format(totalOutstanding)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button></div>
+      <div className="table-tools"><h2>Piutang pelanggan</h2><span className="status">Total sisa: {money.format(totalOutstanding)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Piutang baru</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
       {loading ? <div className="empty-state">Memuat data piutang…</div> : !receivables.length ? <div className="empty-state">Belum ada piutang pelanggan.</div> : <div className="table-wrap"><table><thead><tr><th>Referensi</th><th>Pelanggan</th><th className="numeric">Total</th><th className="numeric">Sudah diterima</th><th className="numeric">Sisa</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{receivables.map(r => { const outstanding = receivableOutstanding(r); return <tr key={r.id}><td className="mono">{r.reference}</td><td>{r.customerName}</td><td className="numeric mono">{money.format(r.amount)}</td><td className="numeric mono">{money.format(r.amount - outstanding)}</td><td className="numeric mono">{money.format(outstanding)}</td><td>{outstanding > 0 ? <button className="button secondary" onClick={() => setCollecting(r)}>Terima bayar</button> : <span className="status success">Lunas</span>}</td></tr>; })}</tbody></table></div>}
     </section>
     {collecting && <ReceivablePaymentModal receivable={collecting} onClose={() => setCollecting(null)} onSaved={updated => { setReceivables(current => current.map(r => r.id === updated.id ? updated : r)); setCollecting(null); }} />}
+    {adding && <ReceivableCreateModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
   </>;
+}
+
+// Manual piutang entry — for debt not tied to a POS sale (e.g. barang diambil dulu, dicatat manual).
+// Sale-time debt (cashier marks a checkout as "pelanggan berhutang") is handled in Pos.tsx instead.
+function ReceivableCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: (receivable: Receivable) => void }) {
+  const [customer, setCustomer] = useState<Customer | null>(null); const [customerQuery, setCustomerQuery] = useState(''); const [customers, setCustomers] = useState<Customer[]>([]); const [customersLoading, setCustomersLoading] = useState(false);
+  const [amount, setAmount] = useState(0); const [note, setNote] = useState(''); const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  const modalRef = useModalTrap(onClose);
+  const idempotencyKey = useRef(crypto.randomUUID()).current;
+  // "Pelanggan Umum" is a frontend-only placeholder for walk-in sales, not a real customer to
+  // collect a debt from — excluded here the same way Pos.tsx's debt checkbox refuses it.
+  useEffect(() => { if (customer) return; setCustomersLoading(true); const timer = setTimeout(() => listCustomers(customerQuery).then(list => setCustomers(list.filter(c => c.id !== 'general'))).catch(() => setCustomers([])).finally(() => setCustomersLoading(false)), 150); return () => clearTimeout(timer); }, [customerQuery, customer]);
+  async function submit() {
+    if (!customer) return setError('Pilih pelanggan terlebih dahulu.');
+    if (amount <= 0) return setError('Jumlah harus lebih dari 0.');
+    setSaving(true); setError('');
+    try { onSaved(await createReceivable(customer.id, amount, note.trim() || undefined, idempotencyKey)); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan piutang'); setSaving(false); }
+  }
+  return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="receivable-create-title">
+    <div className="modal-heading"><div><p className="eyebrow">Piutang pelanggan</p><h2 id="receivable-create-title">Piutang baru</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
+    <label>Pelanggan</label>
+    {customer ? <div className="line-add-row"><span>{customer.name} <span className="muted">({customer.code})</span></span><button type="button" className="button ghost" onClick={() => { setCustomer(null); setCustomerQuery(''); }}>Ganti</button></div> : <>
+      <label className="search-box"><Search /><span className="sr-only">Cari pelanggan</span><input data-autofocus="true" value={customerQuery} onChange={e => setCustomerQuery(e.target.value)} placeholder="Nama atau kode pelanggan…" /></label>
+      {customersLoading ? <div className="empty-compact" role="status">Mencari pelanggan…</div> : <div className="option-list">{customers.map(c => <button type="button" key={c.id} onClick={() => setCustomer(c)}><span><strong>{c.name}</strong><small>{c.code}</small></span></button>)}{!customers.length && <div className="empty-compact">Pelanggan tidak ditemukan.</div>}</div>}
+    </>}
+    <label>Jumlah piutang<input type="number" min="0" value={amount} onChange={e => setAmount(Number(e.target.value))} /></label>
+    <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Barang apa, alasan, dsb." maxLength={50} /></label>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan piutang'}</button></div>
+  </section></div>;
 }
 
 function ReceivablePaymentModal({ receivable, onClose, onSaved }: { receivable: Receivable; onClose: () => void; onSaved: (receivable: Receivable) => void }) {

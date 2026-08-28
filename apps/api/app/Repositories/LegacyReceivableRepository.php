@@ -24,6 +24,53 @@ final class LegacyReceivableRepository
         return $receivables->map(fn ($r) => $this->mapReceivable($r, $c, $payments->get($r->{$c['id']}, collect()), $customers, $cc))->all();
     }
 
+    // Manual piutang entry from Keuangan > Piutang pelanggan ("Piutang baru") - not tied to a
+    // sale. Kode has no natural source to dedupe on (unlike a sale invoice), so it's generated
+    // with a random suffix and retried a few times on the unlikely PK collision.
+    public function create(string $customerId, float $amount, ?string $note, ?string $operator, ?string $idempotencyKey = null): array
+    {
+        $table = config('sid.receivable.table'); $c = config('sid.receivable.columns');
+        $customerTable = config('sid.customer.table'); $cc = config('sid.customer.columns');
+
+        return DB::transaction(function () use ($table, $c, $customerTable, $cc, $customerId, $amount, $note, $operator, $idempotencyKey) {
+            $customer = DB::table($customerTable)->where($cc['id'], $customerId)->first();
+            if (!$customer) throw ValidationException::withMessages(['customerId' => 'Pelanggan tidak ditemukan']);
+
+            $kode = $this->uniqueKode($table, $c['id'], 'PWA-P-');
+            DB::table($table)->insert([
+                $c['id'] => $kode, $c['date'] => now()->toDateString(), $c['customer_code'] => $customerId,
+                $c['amount'] => $amount, $c['note'] => $note ? mb_substr($note, 0, 50) : null, $c['operator'] => $operator,
+            ]);
+
+            $customers = collect([$customerId => $customer]);
+            $receivable = DB::table($table)->where($c['id'], $kode)->first();
+            $result = $this->mapReceivable($receivable, $c, collect(), $customers, $cc);
+            Idempotency::store($idempotencyKey, 'finance-receivables', $result);
+            return $result;
+        });
+    }
+
+    // Auto-created inside SaleController's transaction when a cashier marks a cash sale as
+    // "pelanggan berhutang" - kode is derived from the (already-unique) invoice number, so no
+    // collision retry is needed here.
+    public function createForSale(string $customerId, float $amount, string $invoice, ?string $note, ?string $operator): void
+    {
+        $table = config('sid.receivable.table'); $c = config('sid.receivable.columns');
+        DB::table($table)->insert([
+            $c['id'] => 'PWA-P-' . $invoice, $c['date'] => now()->toDateString(), $c['customer_code'] => $customerId,
+            $c['amount'] => $amount, $c['note'] => $note ? mb_substr($note, 0, 50) : "Piutang dari $invoice", $c['operator'] => $operator,
+        ]);
+    }
+
+    private function uniqueKode(string $table, string $idColumn, string $prefix): string
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $kode = $prefix . now()->format('dmy') . '-' . strtoupper(Str::random(4));
+            if (!DB::table($table)->where($idColumn, $kode)->exists()) return $kode;
+        }
+        throw new \RuntimeException('Gagal membuat kode piutang unik, coba lagi.');
+    }
+
     public function addPayment(string $receivableId, float $amount, ?string $note, ?string $operator, ?string $idempotencyKey = null): array
     {
         $table = config('sid.receivable.table'); $c = config('sid.receivable.columns');

@@ -82,6 +82,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/finance/payables', [PayableController::class, 'index'])->middleware('ability:finance:read');
     Route::post('/finance/payables/{id}/payments', [PayableController::class, 'addPayment'])->middleware('ability:finance:write');
     Route::get('/finance/receivables', [ReceivableController::class, 'index'])->middleware('ability:finance:read');
+    Route::post('/finance/receivables', [ReceivableController::class, 'store'])->middleware('ability:finance:write');
     Route::post('/finance/receivables/{id}/payments', [ReceivableController::class, 'addPayment'])->middleware('ability:finance:write');
     Route::get('/finance/instruments', [PaymentInstrumentController::class, 'index'])->middleware('ability:finance:read');
     Route::post('/finance/instruments', [PaymentInstrumentController::class, 'store'])->middleware('ability:finance:write');

@@ -1,5 +1,6 @@
 <?php
 namespace App\Http\Controllers;
+use App\Repositories\LegacyReceivableRepository;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,12 +61,14 @@ final class SaleController
 
     public function __invoke(Request $request): JsonResponse
     {
-        $data = $request->validate(['customerId'=>'required|string|max:64','paid'=>'required|numeric|min:0','idempotencyKey'=>'required|uuid','paymentMethod'=>'required|string|max:32','paymentRef'=>'nullable|string|max:64','lines'=>'required|array|min:1','lines.*.productId'=>'required|string','lines.*.unit'=>'required|string','lines.*.qty'=>'required|numeric|gt:0','lines.*.price'=>'required|numeric|min:0','lines.*.discount'=>'required|numeric|min:0']);
+        $data = $request->validate(['customerId'=>'required|string|max:64','paid'=>'required|numeric|min:0','idempotencyKey'=>'required|uuid','paymentMethod'=>'required|string|max:32','paymentRef'=>'nullable|string|max:64','isDebt'=>'nullable|boolean','debtNote'=>'nullable|string|max:50','lines'=>'required|array|min:1','lines.*.productId'=>'required|string','lines.*.unit'=>'required|string','lines.*.qty'=>'required|numeric|gt:0','lines.*.price'=>'required|numeric|min:0','lines.*.discount'=>'required|numeric|min:0']);
+        $isDebt = (bool) ($data['isDebt'] ?? false);
 
         // Payment method must be an ACTIVE, configured method (app_payment_methods.code). Looked
         // up before the transaction so an invalid method fails fast without touching stock/kas.
         $method = DB::table('app_payment_methods')->where('code', $data['paymentMethod'])->where('active', true)->first();
         if (!$method) return response()->json(['message' => 'Metode pembayaran tidak valid atau nonaktif.'], 422);
+        if ($isDebt && $method->type !== 'cash') return response()->json(['message' => 'Piutang cuma berlaku untuk pembayaran tunai.'], 422);
 
         $idempotencyKey = $data['idempotencyKey'];
         $existing = DB::table('app_idempotency_keys')->where('idempotency_key', $idempotencyKey)->first();
@@ -76,21 +79,25 @@ final class SaleController
         $total = $subtotal - $discountTotal;
 
         // paid/change are decided SERVER-SIDE by method type — never trusted from the client.
-        // Cash: cashier tenders >= total, change = tendered - total (underpayment rejected, no
-        // piutang support yet). Non-cash (QRIS/transfer/card): the transaction is settled for the
-        // exact total by the payment rail, so paid = total and change = 0 regardless of whatever
-        // `paid` the client sent — otherwise a client could record a phantom change on a non-cash sale.
+        // Cash: cashier tenders >= total, change = tendered - total. The one exception is a debt
+        // sale ($isDebt) — cashier explicitly marks the customer as owing the shortfall, so
+        // underpayment is accepted and the gap becomes a piutang instead of being rejected.
+        // Non-cash (QRIS/transfer/card): the transaction is settled for the exact total by the
+        // payment rail, so paid = total and change = 0 regardless of whatever `paid` the client
+        // sent — otherwise a client could record a phantom change on a non-cash sale.
         $isCash = ($method->type === 'cash');
         if ($isCash) {
-            if ($data['paid'] < $total) {
+            if (!$isDebt && $data['paid'] < $total) {
                 return response()->json(['message' => 'Jumlah bayar kurang dari total belanja.'], 422);
             }
-            $paid = (float) $data['paid'];
+            $paid = $isDebt ? min((float) $data['paid'], $total) : (float) $data['paid'];
             $change = max(0.0, $paid - $total);
         } else {
             $paid = (float) $total;
             $change = 0.0;
         }
+        $debtAmount = $isDebt ? round($total - $paid, 2) : 0.0;
+        if ($isDebt && $debtAmount <= 0) $isDebt = false; // fully paid anyway — nothing to owe, treat as a normal cash sale
 
         $productTable = config('sid.product.table'); $pc = config('sid.product.columns');
         $saleTable = config('sid.sale.table'); $sc = config('sid.sale.columns');
@@ -99,7 +106,7 @@ final class SaleController
         $cashier = $request->user()?->getKey();
 
         try {
-            $result = DB::transaction(function () use ($data, $method, $idempotencyKey, $subtotal, $discountTotal, $total, $paid, $change, $productTable, $pc, $saleTable, $sc, $itemTable, $ic, $customerTable, $cc, $cashier) {
+            $result = DB::transaction(function () use ($data, $method, $idempotencyKey, $subtotal, $discountTotal, $total, $paid, $change, $isDebt, $debtAmount, $productTable, $pc, $saleTable, $sc, $itemTable, $ic, $customerTable, $cc, $cashier) {
                 // Lock every line's product row once; the lock is held for the whole transaction.
                 $products = [];
                 foreach ($data['lines'] as $line) {
@@ -118,6 +125,7 @@ final class SaleController
                 $invoice = 'PWA-'.now()->format('dmy').'-'.str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
                 $customer = DB::table($customerTable)->where($cc['id'], $data['customerId'])->first();
+                if ($isDebt && !$customer) throw ValidationException::withMessages(['customerId' => 'Pilih pelanggan terdaftar untuk transaksi piutang, bukan Pelanggan Umum.']);
 
                 DB::table($saleTable)->insert([
                     $sc['id'] => $invoice, $sc['date'] => $today, $sc['customer_code'] => $data['customerId'],
@@ -143,15 +151,24 @@ final class SaleController
                     DB::table($productTable)->where($pc['id'], $line['productId'])->decrement($pc['stock'], $line['qty']);
                 }
 
-                // One payment row per sale for v1 (amount = full total). Written INSIDE this
-                // transaction so it is atomic with the sale/stock rows and rolls back together
-                // on the idempotency-key violation below — a replayed request never double-inserts.
-                // method_name is denormalized so the recap stays stable if the method is later
-                // renamed/deleted. Multi-row-per-sale capable (see app_sale_payments migration).
+                // One payment row per sale for v1 (amount = full total, or just what was actually
+                // tendered on a debt sale — the daily-recap-by-method reconciliation depends on
+                // this matching real cash received, not the sale's total value). Written INSIDE
+                // this transaction so it is atomic with the sale/stock rows and rolls back
+                // together on the idempotency-key violation below — a replayed request never
+                // double-inserts. method_name is denormalized so the recap stays stable if the
+                // method is later renamed/deleted. Multi-row-per-sale capable (see
+                // app_sale_payments migration).
                 DB::table('app_sale_payments')->insert([
                     'sale_id' => $invoice, 'method_code' => $method->code, 'method_name' => $method->name,
-                    'amount' => $total, 'reference' => $data['paymentRef'] ?? null, 'created_at' => now(),
+                    'amount' => $isDebt ? $paid : $total, 'reference' => $data['paymentRef'] ?? null, 'created_at' => now(),
                 ]);
+
+                // Debt sale: the shortfall becomes a piutang tied to the customer, written inside
+                // this same transaction so it's atomic with the sale (both commit or neither does).
+                if ($isDebt) {
+                    (new LegacyReceivableRepository())->createForSale($data['customerId'], $debtAmount, $invoice, $data['debtNote'] ?? null, $cashier);
+                }
 
                 // Unique PK on idempotency_key: if a concurrent duplicate request already committed
                 // (raced past the pre-check above), this insert throws and the whole transaction —

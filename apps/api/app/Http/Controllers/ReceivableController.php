@@ -12,6 +12,23 @@ final class ReceivableController
     public function index(LegacyReceivableRepository $repo): JsonResponse
     { return response()->json($repo->all()); }
 
+    public function store(Request $request, LegacyReceivableRepository $repo): JsonResponse
+    {
+        $idempotencyKey = $request->header('Idempotency-Key');
+        if ($existing = Idempotency::find($idempotencyKey)) return response()->json($existing);
+
+        $data = $request->validate(['customerId' => 'required|string|max:64', 'amount' => 'required|numeric|gt:0', 'note' => 'nullable|string|max:255']);
+        try {
+            $receivable = $repo->create($data['customerId'], (float) $data['amount'], $data['note'] ?? null, $request->user()?->getKey(), $idempotencyKey);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        } catch (QueryException $e) {
+            if ($e->getCode() === '23000' && ($winner = Idempotency::find($idempotencyKey))) return response()->json($winner);
+            throw $e;
+        }
+        return response()->json($receivable, 201);
+    }
+
     public function addPayment(Request $request, string $id, LegacyReceivableRepository $repo): JsonResponse
     {
         $idempotencyKey = $request->header('Idempotency-Key');

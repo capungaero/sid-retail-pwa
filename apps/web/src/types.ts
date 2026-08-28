@@ -15,7 +15,7 @@ export type Product = {
 export type Customer = { id: string; code: string; name: string; phone?: string; tier: 'retail' | 'member' | 'wholesale' };
 export type CartLine = { product: Product; unit: Unit; qty: number; discount: number; note?: string };
 export type HeldSale = { id: string; reference: string; customer: Customer; lines: CartLine[]; heldAt: string };
-export type PaymentPayload = { customerId: string; lines: { productId: string; unit: string; qty: number; price: number; discount: number }[]; paid: number; idempotencyKey: string; paymentMethod: string; paymentRef?: string };
+export type PaymentPayload = { customerId: string; lines: { productId: string; unit: string; qty: number; price: number; discount: number }[]; paid: number; idempotencyKey: string; paymentMethod: string; paymentRef?: string; isDebt?: boolean; debtNote?: string };
 
 export type PaymentMethodType = 'cash' | 'credit' | 'transfer' | 'qris' | 'other';
 export type PaymentMethod = { id: string; code: string; name: string; type: PaymentMethodType; legacyKasCode?: string | null; active: boolean; sortOrder: number };
