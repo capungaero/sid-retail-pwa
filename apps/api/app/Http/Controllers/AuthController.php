@@ -61,10 +61,11 @@ final class AuthController
         $defaultRole = config('sid.auth.default_role', 'kasir');
         $role = $levelMap[(string) $row->{$c['role']}] ?? $defaultRole;
 
+        $permissions = $this->permissionsFor($role);
         $employee = Employee::find($username);
-        $token = $employee->createToken('pos', $this->abilitiesFor($role))->plainTextToken;
+        $token = $employee->createToken('pos', $this->abilitiesForPermissions($permissions))->plainTextToken;
 
-        return ['token' => $token, 'user' => ['id' => $row->{$c['id']}, 'name' => $row->{$c['name']}, 'role' => $row->{$c['role']}]];
+        return ['token' => $token, 'user' => ['id' => $row->{$c['id']}, 'name' => $row->{$c['name']}, 'role' => $row->{$c['role']}, 'permissions' => $permissions]];
     }
 
     private function loginAppUser(string $username, string $password): ?array
@@ -73,25 +74,35 @@ final class AuthController
         if (!$user || !$user->password_hash || !Hash::check($password, $user->password_hash)) return null;
 
         // Already a Pengaturan role key (kasir/supervisor/admin) — no level map needed here.
-        $token = $user->createToken('pos', $this->abilitiesFor($user->role))->plainTextToken;
+        $permissions = $this->permissionsFor($user->role);
+        $token = $user->createToken('pos', $this->abilitiesForPermissions($permissions))->plainTextToken;
 
-        return ['token' => $token, 'user' => ['id' => $user->id, 'name' => $user->name, 'role' => $user->role]];
+        return ['token' => $token, 'user' => ['id' => $user->id, 'name' => $user->name, 'role' => $user->role, 'permissions' => $permissions]];
     }
 
-    // Role-permission enforcement: look up the role's stored PermissionKey[] in
-    // app_role_permissions and grant only the matching Sanctum abilities — instead of the fixed
-    // full-access list every login used to receive regardless of role or the "Hak akses per
-    // peran" screen.
-    private function abilitiesFor(string $role): array
+    // The role's stored PermissionKey[] from Pengaturan > "Hak akses per peran" (app_role_
+    // permissions). Returned to the frontend as part of the login response — not fetched
+    // separately via GET /settings/role-permissions, because that route is itself gated
+    // settings:read, which a kasir/supervisor token doesn't have: fetching a role's own
+    // permissions to decide what to show them can't depend on a permission most roles don't
+    // have, or the fetch 403s and the caller is left not knowing what it's even allowed to do.
+    private function permissionsFor(string $role): array
     {
-        $abilityMap = config('sid.auth.permission_abilities', []);
         if ($role === 'admin') {
             // Never let a misconfigured/emptied app_role_permissions row lock the admin
             // account out of its own settings screen — admin always gets everything.
-            return array_values(array_unique(array_merge(...array_values($abilityMap))));
+            return array_keys(config('sid.auth.permission_abilities', []));
         }
         $permissions = DB::table('app_role_permissions')->where('role', $role)->value('permissions');
-        $permissions = $permissions ? json_decode($permissions, true) : [];
+        return $permissions ? json_decode($permissions, true) : [];
+    }
+
+    // Role-permission enforcement: map the role's granted PermissionKey[] to the matching
+    // Sanctum ability strings — instead of the fixed full-access list every login used to
+    // receive regardless of role or the "Hak akses per peran" screen.
+    private function abilitiesForPermissions(array $permissions): array
+    {
+        $abilityMap = config('sid.auth.permission_abilities', []);
         $abilities = [];
         foreach ($permissions as $key) {
             $abilities = array_merge($abilities, $abilityMap[$key] ?? []);

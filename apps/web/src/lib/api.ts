@@ -5,7 +5,7 @@ import { computeAttendanceStatus, findScheduledShift } from './hrd';
 import { buildDailyRecap } from './reports';
 import { validateStoreProfile } from './settings';
 import { openReceiptPreviewPopup } from './print';
-import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, DailyRecap, Employee, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
+import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, DailyRecap, Employee, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
 
 const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') as string | undefined;
 export const isDemoMode = !baseUrl;
@@ -15,7 +15,7 @@ export const isDemoMode = !baseUrl;
 // bootstrap or same-site cookie setup exists for this deployment).
 let authToken: string | null = (!isDemoMode && sessionStorage.getItem('sid-token')) || null;
 
-export type AuthUser = { id: string; name: string; role: string };
+export type AuthUser = { id: string; name: string; role: string; permissions: PermissionKey[] };
 
 // api.ts is a plain module, not a React component, so it can't set React state itself when a
 // request comes back 401 (session expired/revoked). App.tsx registers a handler here that clears

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { Boxes, Building2, ChevronLeft, CircleDollarSign, ClipboardList, Gauge, LogOut, Menu, PackageSearch, ReceiptText, RefreshCw, Settings, ShoppingCart, UsersRound, Wifi, WifiOff, X } from 'lucide-react';
 import { Dashboard } from './pages/Dashboard';
@@ -12,10 +12,11 @@ import { Reports } from './pages/Reports';
 import { Hrd } from './pages/Hrd';
 import { Settings as SettingsPage } from './pages/Settings';
 import { ModuleOverview } from './pages/ModuleOverview';
-import { getRolePermissions, getStoredUser, isDemoMode, login as apiLogin, logout as apiLogout, setUnauthorizedHandler } from './lib/api';
+import { getStoredUser, isDemoMode, login as apiLogin, logout as apiLogout, setUnauthorizedHandler } from './lib/api';
 import type { AuthUser } from './lib/api';
 import { resolveRole } from './lib/permissions';
-import type { PermissionKey, RolePermissions } from './types';
+import { demoRolePermissions } from './data';
+import type { PermissionKey } from './types';
 
 // `permission: null` (Ringkasan) is the one section with no matching row in Pengaturan > Hak
 // akses per peran — it's a cross-module overview, so it's shown to any role that manages more
@@ -32,9 +33,19 @@ const sections: { label: string; path: string; icon: typeof Gauge; ready: boolea
   { label: 'Pengaturan', path: '/settings', icon: Settings, ready: true, permission: 'settings' }
 ];
 
-function sectionVisible(section: (typeof sections)[number], granted: PermissionKey[]): boolean {
+function sectionVisible(section: { permission: PermissionKey | null }, granted: PermissionKey[]): boolean {
   if (section.permission === null) return granted.some(k => k !== 'pos');
   return granted.includes(section.permission);
+}
+
+// Riwayat transaksi isn't a sidebar section (only reachable via Dashboard's "Lihat semua" link),
+// but it's still a real route that needs the same guard — same visibility rule as Ringkasan,
+// since it's a Dashboard-adjacent reporting view a bare kasir has no reason to be looking at.
+const guardedRoutes: { path: string; permission: PermissionKey | null }[] = [...sections, { path: '/transactions', permission: null }];
+
+function isPathAllowed(pathname: string, granted: PermissionKey[]): boolean {
+  const route = guardedRoutes.find(r => r.path === pathname);
+  return !route || sectionVisible(route, granted);
 }
 
 const moduleInfo: Record<string, { title: string; description: string; items: string[] }> = {};
@@ -80,13 +91,22 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
   // Demo mode has no real logged-in user, but its persona is displayed as "Kasir" — resolved to
   // 'kasir' here too so the demo build shows the same restricted nav a real kasir account would.
   const role = resolveRole(user?.role ?? (isDemoMode ? 'kasir' : undefined));
-  const [rolePermissions, setRolePermissions] = useState<RolePermissions | null>(null);
-  useEffect(() => { getRolePermissions().then(setRolePermissions).catch(() => setRolePermissions(null)); }, []);
-  // Every module open (unfiltered) while permissions are still loading, rather than flashing an
-  // almost-empty sidebar for a moment on every login — the granted set narrows it down once known.
-  const granted = rolePermissions?.[role] ?? (['pos', 'inventory', 'finance', 'reports', 'hrd', 'settings'] as PermissionKey[]);
+  // Comes straight from the login response now (AuthController computes it server-side), not a
+  // separate GET /settings/role-permissions call — that route requires settings:read, which most
+  // roles don't have, so a role could never learn its own scope that way. Demo mode has no real
+  // login response, so it falls back to the demo role-permission seed for the 'kasir' persona.
+  const granted = user?.permissions ?? (isDemoMode ? demoRolePermissions.kasir : []);
   const visibleSections = sections.filter(s => sectionVisible(s, granted));
   const defaultPath = visibleSections[0]?.path ?? '/dashboard';
+
+  // Filtering the nav alone doesn't stop someone from already being on (or navigating straight
+  // to) a route their role can't see there — e.g. still on /dashboard from before a logout, then
+  // logging back in as a kasir. Route access itself needs the same permission check, not just
+  // what's rendered in the sidebar.
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!isPathAllowed(location.pathname, granted)) navigate(defaultPath, { replace: true });
+  }, [location.pathname, granted, defaultPath, navigate]);
 
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
