@@ -16,6 +16,8 @@ final class SaleController
     {
         $saleTable = config('sid.sale.table'); $sc = config('sid.sale.columns');
         $itemTable = config('sid.sale_item.table'); $ic = config('sid.sale_item.columns');
+        $employeeTable = config('sid.auth.table'); $ec = config('sid.auth.columns');
+        $productTable = config('sid.product.table'); $pc = config('sid.product.columns');
 
         $from = $request->query('from') ?: now()->subDays(90)->toDateString();
         $to = $request->query('to') ?: now()->toDateString();
@@ -24,7 +26,7 @@ final class SaleController
             ->whereBetween($sc['date'], [$from, $to])
             ->orderByDesc($sc['date'])->orderByDesc($sc['id'])
             ->limit(2000)
-            ->get([$sc['id'], $sc['date'], $sc['time'], $sc['customer_code'], $sc['customer_name'], $sc['total'], $sc['paid'], $sc['change']]);
+            ->get([$sc['id'], $sc['date'], $sc['time'], $sc['customer_code'], $sc['customer_name'], $sc['total'], $sc['paid'], $sc['change'], $sc['cashier']]);
 
         if ($sales->isEmpty()) return response()->json([]);
 
@@ -33,21 +35,39 @@ final class SaleController
             ->get([$ic['sale_id'], $ic['product_code'], $ic['product_name'], $ic['unit'], $ic['qty'], $ic['price'], $ic['discount_rupiah']])
             ->groupBy($ic['sale_id']);
 
-        $result = $sales->map(function ($sale) use ($sc, $ic, $items) {
-            $lines = ($items->get($sale->{$sc['id']}) ?? collect())->map(fn ($line) => [
-                'productId' => (string) $line->{$ic['product_code']},
-                'productName' => (string) $line->{$ic['product_name']},
-                'unit' => (string) $line->{$ic['unit']},
-                'qty' => (float) $line->{$ic['qty']},
-                'price' => (float) $line->{$ic['price']},
-                'discount' => (float) $line->{$ic['discount_rupiah']},
-            ])->values();
+        $cashierCodes = $sales->pluck($sc['cashier'])->filter()->unique()->values()->all();
+        $cashiers = DB::table($employeeTable)->whereIn($ec['id'], $cashierCodes)->pluck($ec['name'], $ec['id']);
+
+        // Current stock per product referenced in this page of sales, used to show the detail
+        // view's "sisa stok" / "stok awal". stockBefore is a projection (current stock + qty on
+        // this line) rather than a true historical snapshot — accurate only if nothing else has
+        // moved that product's stock since this sale, which is the common case for the most
+        // recent transactions this view is used for, but can drift for older ones.
+        $productIds = $items->flatten()->pluck($ic['product_code'])->unique()->values()->all();
+        $stocks = DB::table($productTable)->whereIn($pc['id'], $productIds)->pluck($pc['stock'], $pc['id']);
+
+        $result = $sales->map(function ($sale) use ($sc, $ic, $items, $cashiers, $stocks) {
+            $lines = ($items->get($sale->{$sc['id']}) ?? collect())->map(function ($line) use ($ic, $stocks) {
+                $currentStock = (float) ($stocks->get($line->{$ic['product_code']}) ?? 0);
+                $qty = (float) $line->{$ic['qty']};
+                return [
+                    'productId' => (string) $line->{$ic['product_code']},
+                    'productName' => (string) $line->{$ic['product_name']},
+                    'unit' => (string) $line->{$ic['unit']},
+                    'qty' => $qty,
+                    'price' => (float) $line->{$ic['price']},
+                    'discount' => (float) $line->{$ic['discount_rupiah']},
+                    'stockBefore' => $currentStock + $qty,
+                    'stockAfter' => $currentStock,
+                ];
+            })->values();
             $createdAt = trim(($sale->{$sc['date']} ?? '') . 'T' . ($sale->{$sc['time']} ?? '00:00:00'));
             return [
                 'id' => (string) $sale->{$sc['id']},
                 'invoice' => (string) $sale->{$sc['id']},
                 'customerId' => (string) ($sale->{$sc['customer_code']} ?? ''),
                 'customerName' => (string) ($sale->{$sc['customer_name']} ?? 'Pelanggan Umum'),
+                'cashierName' => $sale->{$sc['cashier']} ? (string) ($cashiers->get($sale->{$sc['cashier']}) ?? $sale->{$sc['cashier']}) : null,
                 'lines' => $lines,
                 'total' => (float) $sale->{$sc['total']},
                 'paid' => (float) $sale->{$sc['paid']},

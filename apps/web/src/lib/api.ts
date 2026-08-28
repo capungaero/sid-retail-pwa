@@ -156,7 +156,17 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
 }
 
 export async function listSales(): Promise<SaleRecord[]> {
-  if (!baseUrl) return demoSalesLog;
+  if (!baseUrl) {
+    // Enriched from current demoProducts stock, same projection SaleController::index() does.
+    return demoSalesLog.map(sale => ({
+      ...sale,
+      cashierName: sale.customerId === 'general' ? 'Kasir Demo' : 'Admin Toko',
+      lines: sale.lines.map(line => {
+        const stockAfter = demoProducts.find(p => p.id === line.productId)?.stock ?? 0;
+        return { ...line, stockAfter, stockBefore: stockAfter + line.qty };
+      }),
+    }));
+  }
   return request('/sales');
 }
 
