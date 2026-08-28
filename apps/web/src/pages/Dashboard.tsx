@@ -19,7 +19,7 @@ function compactMoney(v: number) {
 }
 
 export function Dashboard() {
-  const [sales, setSales] = useState<SaleRecord[]>([]); const [products, setProducts] = useState<Product[]>([]); const [orders, setOrders] = useState<PurchaseOrder[]>([]); const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const [sales, setSales] = useState<SaleRecord[]>([]); const [products, setProducts] = useState<Product[]>([]); const [orders, setOrders] = useState<PurchaseOrder[]>([]); const [receivables, setReceivables] = useState<Receivable[]>([]); const [loading, setLoading] = useState(true);
   const [histFrom, setHistFrom] = useState(''); const [histTo, setHistTo] = useState('');
   const [chartRange, setChartRange] = useState<'harian' | 'mingguan' | 'bulanan'>('harian');
   // 0 = periode berjalan (sampai hari ini); 1 = satu periode ke belakang, dst. Direset
@@ -28,9 +28,14 @@ export function Dashboard() {
   const [recap, setRecap] = useState<DailyRecap | null>(null);
   function selectRange(range: typeof chartRange) { setChartRange(range); setChartOffset(0); }
   useEffect(() => {
-    Promise.all([listSales(), listProducts(), listPurchaseOrders(), listReceivables()])
+    // Each fetch degrades to an empty list on its own instead of failing the whole page: a
+    // kasir's token only has the 'pos' ability, so purchase-orders (inventory) and receivables
+    // (finance) 403 for them — that's expected RBAC, not an error worth showing. Sales/stock
+    // still load fine, so a kasir gets an honestly-scoped dashboard instead of a page-wide
+    // "Invalid ability provided." banner blocking everything, including what they can see.
+    const safe = <T,>(p: Promise<T[]>): Promise<T[]> => p.catch(() => []);
+    Promise.all([safe(listSales()), safe(listProducts()), safe(listPurchaseOrders()), safe(listReceivables())])
       .then(([s, p, o, r]) => { setSales(s); setProducts(p); setOrders(o); setReceivables(r); })
-      .catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat ringkasan'))
       .finally(() => setLoading(false));
   }, []);
   // Today's revenue split per payment method (best-effort; failure just hides the card).
@@ -93,7 +98,6 @@ export function Dashboard() {
   const recentHistory = filteredHistory.slice(0, 10);
 
   return <div className="page"><div className="page-heading"><div><p className="eyebrow">{todayLabel}</p><h1>Ringkasan operasional</h1><p>Pantau aktivitas toko hari ini.</p></div><Link className="button primary" to="/pos">Buka kasir <ArrowRight /></Link></div>
-    {error && <div className="notice error" role="alert">{error}</div>}
     <section className="metric-grid" aria-label="Metrik hari ini">
       <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Penjualan hari ini</span><strong>{loading ? '—' : money.format(summary.revenue)}</strong><small>{loading ? 'Memuat…' : `${number.format(summary.count)} transaksi`}</small></div></article>
       <article className="metric"><span className="metric-icon green"><ReceiptText /></span><div><span>Rata-rata transaksi</span><strong>{loading ? '—' : money.format(avgTicket)}</strong><small>{number.format(summary.qtySold)} item terjual</small></div></article>
