@@ -199,9 +199,12 @@ function HistoryTab() {
     // open a blank tab first, then fill it in once the store profile fetch resolves.
     const popup = openBlankPreviewPopup();
     setPrintingReport(true);
+    // Store profile is settings:read-gated (kasir tokens don't have it) - the report still works
+    // fine without it, just falls back to the VITE_STORE_NAME default for the header, same as
+    // Settings > Printer's "Tes cetak" does for the same reason.
+    let profileName: string | undefined; try { profileName = (await getStoreProfile())?.name; } catch { profileName = undefined; }
     try {
-      const profile = await getStoreProfile();
-      openDailySalesReportPopup(visibleSales, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), profile?.name, popup);
+      openDailySalesReportPopup(visibleSales, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), profileName, popup);
     } catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan cetak'); }
     finally { setPrintingReport(false); }
   }
