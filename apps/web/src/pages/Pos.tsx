@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ArchiveRestore, Banknote, Check, ChevronDown, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, X } from 'lucide-react';
 import { completeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCustomers, listProducts, listSales } from '../lib/api';
 import { money, number } from '../lib/money';
-import { receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
+import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
 import type { CartLine, Customer, HeldSale, PaperWidth, PaymentMethod, Product, SaleRecord, StoreProfile, Unit } from '../types';
 
@@ -171,11 +171,17 @@ function SaleDetailModal({ sale, onClose, onReprint, reprinting }: { sale: SaleR
 function HistoryTab() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null); const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const [cashierQuery, setCashierQuery] = useState(''); const [printingReport, setPrintingReport] = useState(false);
   const { previewAndPrint, modal } = useReceiptPreview();
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const todayKey = new Date().toISOString().slice(0, 10);
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [sales, todayKey]);
+  const visibleSales = useMemo(() => {
+    const q = cashierQuery.trim().toLowerCase();
+    return q ? todaySales.filter(s => (s.cashierName || '').toLowerCase().includes(q)) : todaySales;
+  }, [todaySales, cashierQuery]);
+  const totalToday = useMemo(() => visibleSales.reduce((sum, s) => sum + s.total, 0), [visibleSales]);
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
     try {
@@ -188,13 +194,31 @@ function HistoryTab() {
     } catch { /* preview/print was skipped or failed - cashier can just try again from the row */ }
     finally { setReprintingId(null); }
   }
+  async function printReport() {
+    // window.open() must run synchronously inside the click handler or popup blockers kill it —
+    // open a blank tab first, then fill it in once the store profile fetch resolves.
+    const popup = openBlankPreviewPopup();
+    setPrintingReport(true);
+    try {
+      const profile = await getStoreProfile();
+      openDailySalesReportPopup(visibleSales, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), profile?.name, popup);
+    } catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan cetak'); }
+    finally { setPrintingReport(false); }
+  }
   return <section className="pos-main history-tab">
-    <div className="cart-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{todaySales.length} transaksi</span></div><button className="button ghost" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button></div>
+    <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{visibleSales.length} transaksi · {money.format(totalToday)}</span></div>
+      <div className="history-tools">
+        <label className="search-box history-search"><Search aria-hidden="true" /><span className="sr-only">Cari nama kasir</span><input value={cashierQuery} onChange={e => setCashierQuery(e.target.value)} placeholder="Cari kasir…" /></label>
+        <button className="button secondary" onClick={printReport} disabled={printingReport || !visibleSales.length}><Printer /> {printingReport ? 'Menyiapkan…' : 'Cetak laporan (A4)'}</button>
+        <button className="button ghost" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
+      </div>
+    </div>
     {error && <div className="notice error" role="alert">{error}</div>}
-    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !todaySales.length ? <div className="empty-state"><History /><p>Belum ada transaksi hari ini.</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Pelanggan</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
-      {todaySales.map(s => <tr key={s.id}>
+    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !visibleSales.length ? <div className="empty-state"><History /><p>{cashierQuery ? 'Tidak ada transaksi dari kasir tersebut.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
+      {visibleSales.map(s => <tr key={s.id}>
         <td className="mono">{s.invoice}</td>
         <td>{new Date(s.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+        <td>{s.cashierName || '—'}</td>
         <td>{s.customerName || 'Tanpa nama'}</td>
         <td className="numeric mono">{money.format(s.total)}</td>
         <td><div className="row-actions"><button className="button ghost" onClick={() => setDetail(s)}>Detail</button><button className="button secondary" onClick={() => reprint(s)} disabled={reprintingId === s.id}><Printer /> {reprintingId === s.id ? '…' : 'Cetak ulang'}</button></div></td>

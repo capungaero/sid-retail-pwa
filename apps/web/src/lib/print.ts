@@ -1,5 +1,5 @@
-import type { Customer, PaperWidth, StoreProfile } from '../types';
-import { money } from './money';
+import type { Customer, PaperWidth, SaleRecord, StoreProfile } from '../types';
+import { money, number } from './money';
 
 // Deliberately flat and decoupled from CartLine: a receipt is printed both right after a
 // checkout (where lines come from the live cart) and when reprinting a past sale from history
@@ -47,6 +47,45 @@ export function openReceiptPreviewPopup(receipt: Receipt, profile?: StoreProfile
   if (!win) throw new Error('Popup pratinjau diblokir browser. Izinkan popup untuk situs ini lalu coba lagi.');
   const printButton = '<div style="text-align:center;margin-top:12px"><button onclick="window.print()" style="font:600 13px sans-serif;padding:9px 18px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;cursor:pointer">Cetak</button></div>';
   win.document.write(receiptHtml(receipt, profile, paperWidth).replace('</body>', `${printButton}</body>`));
+  win.document.close();
+}
+
+// A4 daily sales report — one section per faktur (oldest first, so it reads like a closing
+// report) with a No/Nama barang/Satuan/Qty/Harga table, and one grand total for the whole day
+// at the bottom. Separate from receiptHtml (58/80mm thermal roll) which prints a single sale.
+export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, storeName?: string): string {
+  const ordered = [...sales].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const name = storeName || (import.meta.env.VITE_STORE_NAME as string | undefined) || 'SID Retail';
+  const sections = ordered.map(sale => {
+    const rows = sale.lines.map((l, i) => `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td class="num">${money.format(l.price)}</td></tr>`).join('');
+    return `<section class="faktur"><p class="faktur-head">Faktur <strong>${escapeHtml(sale.invoice)}</strong> · ${new Date(sale.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · Kasir ${escapeHtml(sale.cashierName || '—')} · ${escapeHtml(sale.customerName || 'Pelanggan Umum')}</p><table><thead><tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th class="num">Harga</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+  }).join('');
+  const grandTotal = ordered.reduce((sum, s) => sum + s.total, 0);
+  return `<html><head><title>Laporan Transaksi Harian ${escapeHtml(dateLabel)}</title><style>
+    @page{size:A4;margin:16mm}
+    body{font:12px/1.4 Arial,sans-serif;color:#111}
+    h1{font-size:18px;margin:0 0 2px}
+    .sub{color:#555;margin:0 0 18px;font-size:12px}
+    .faktur{margin-bottom:16px;break-inside:avoid}
+    .faktur-head{font-size:11.5px;margin:0 0 4px;color:#333}
+    table{width:100%;border-collapse:collapse;font-size:11.5px}
+    th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
+    th{background:#f1f1f1}
+    .num{text-align:right}
+    .grand{margin-top:10px;padding-top:10px;border-top:2px solid #111;text-align:right;font-size:14px;font-weight:bold}
+  </style></head><body>
+    <h1>${escapeHtml(name)}</h1>
+    <p class="sub">Laporan Transaksi Harian &middot; ${escapeHtml(dateLabel)} &middot; ${ordered.length} transaksi</p>
+    ${sections || '<p>Tidak ada transaksi.</p>'}
+    <p class="grand">TOTAL KESELURUHAN: ${money.format(grandTotal)}</p>
+  </body></html>`;
+}
+
+export function openDailySalesReportPopup(sales: SaleRecord[], dateLabel: string, storeName?: string, popup?: Window | null) {
+  const win = popup ?? openBlankPreviewPopup();
+  if (!win) throw new Error('Popup pratinjau diblokir browser. Izinkan popup untuk situs ini lalu coba lagi.');
+  const printButton = '<div style="text-align:center;margin-top:12px"><button onclick="window.print()" style="font:600 13px sans-serif;padding:9px 18px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;cursor:pointer">Cetak</button></div>';
+  win.document.write(dailySalesReportHtml(sales, dateLabel, storeName).replace('</body>', `${printButton}</body>`));
   win.document.close();
 }
 
