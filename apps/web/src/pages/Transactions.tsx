@@ -4,19 +4,15 @@ import { Link } from 'react-router-dom';
 import { getStoredUser, listSales } from '../lib/api';
 import { summarizeSales } from '../lib/reports';
 import { money, number } from '../lib/money';
+import { resolveRole } from '../lib/permissions';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import type { SaleRecord } from '../types';
-
-// AuthUser.role is whatever the identity source returns verbatim: legacy karyawan logins carry
-// the raw karyawan.level code ('ADM'), while app_user_settings logins already carry the mapped
-// Pengaturan role key ('admin') — see AuthController::login's two branches.
-const ADMIN_ROLES = ['ADM', 'admin'];
 
 export function Transactions() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null);
-  const isAdmin = ADMIN_ROLES.includes(getStoredUser()?.role ?? '');
+  const isAdmin = resolveRole(getStoredUser()?.role) === 'admin';
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat transaksi')).finally(() => setLoading(false)); };
   useEffect(load, []);
 

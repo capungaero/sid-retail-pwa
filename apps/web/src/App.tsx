@@ -12,19 +12,30 @@ import { Reports } from './pages/Reports';
 import { Hrd } from './pages/Hrd';
 import { Settings as SettingsPage } from './pages/Settings';
 import { ModuleOverview } from './pages/ModuleOverview';
-import { getStoredUser, isDemoMode, login as apiLogin, logout as apiLogout, setUnauthorizedHandler } from './lib/api';
+import { getRolePermissions, getStoredUser, isDemoMode, login as apiLogin, logout as apiLogout, setUnauthorizedHandler } from './lib/api';
 import type { AuthUser } from './lib/api';
+import { resolveRole } from './lib/permissions';
+import type { PermissionKey, RolePermissions } from './types';
 
-const sections = [
-  { label: 'Ringkasan', path: '/dashboard', icon: Gauge, ready: true },
-  { label: 'Master Data', path: '/master', icon: PackageSearch, ready: true },
-  { label: 'Transaksi', path: '/pos', icon: ShoppingCart, ready: true },
-  { label: 'Persediaan', path: '/inventory', icon: Boxes, ready: true },
-  { label: 'Keuangan', path: '/finance', icon: CircleDollarSign, ready: true },
-  { label: 'Laporan', path: '/reports', icon: ReceiptText, ready: true },
-  { label: 'HRD', path: '/hrd', icon: UsersRound, ready: true },
-  { label: 'Pengaturan', path: '/settings', icon: Settings, ready: true }
+// `permission: null` (Ringkasan) is the one section with no matching row in Pengaturan > Hak
+// akses per peran — it's a cross-module overview, so it's shown to any role that manages more
+// than pure checkout (i.e. has some permission besides 'pos'), and hidden for a bare kasir who
+// only ever needs the Transaksi screen. Every other section maps 1:1 to a permission checkbox.
+const sections: { label: string; path: string; icon: typeof Gauge; ready: boolean; permission: PermissionKey | null }[] = [
+  { label: 'Ringkasan', path: '/dashboard', icon: Gauge, ready: true, permission: null },
+  { label: 'Master Data', path: '/master', icon: PackageSearch, ready: true, permission: 'inventory' },
+  { label: 'Transaksi', path: '/pos', icon: ShoppingCart, ready: true, permission: 'pos' },
+  { label: 'Persediaan', path: '/inventory', icon: Boxes, ready: true, permission: 'inventory' },
+  { label: 'Keuangan', path: '/finance', icon: CircleDollarSign, ready: true, permission: 'finance' },
+  { label: 'Laporan', path: '/reports', icon: ReceiptText, ready: true, permission: 'reports' },
+  { label: 'HRD', path: '/hrd', icon: UsersRound, ready: true, permission: 'hrd' },
+  { label: 'Pengaturan', path: '/settings', icon: Settings, ready: true, permission: 'settings' }
 ];
+
+function sectionVisible(section: (typeof sections)[number], granted: PermissionKey[]): boolean {
+  if (section.permission === null) return granted.some(k => k !== 'pos');
+  return granted.includes(section.permission);
+}
 
 const moduleInfo: Record<string, { title: string; description: string; items: string[] }> = {};
 
@@ -65,10 +76,22 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
   const [open, setOpen] = useState(false); const [online, setOnline] = useState(navigator.onLine); const location = useLocation();
   useEffect(() => { const yes = () => setOnline(true); const no = () => setOnline(false); window.addEventListener('online', yes); window.addEventListener('offline', no); return () => { window.removeEventListener('online', yes); window.removeEventListener('offline', no); }; }, []);
   useEffect(() => setOpen(false), [location.pathname]);
+
+  // Demo mode has no real logged-in user, but its persona is displayed as "Kasir" — resolved to
+  // 'kasir' here too so the demo build shows the same restricted nav a real kasir account would.
+  const role = resolveRole(user?.role ?? (isDemoMode ? 'kasir' : undefined));
+  const [rolePermissions, setRolePermissions] = useState<RolePermissions | null>(null);
+  useEffect(() => { getRolePermissions().then(setRolePermissions).catch(() => setRolePermissions(null)); }, []);
+  // Every module open (unfiltered) while permissions are still loading, rather than flashing an
+  // almost-empty sidebar for a moment on every login — the granted set narrows it down once known.
+  const granted = rolePermissions?.[role] ?? (['pos', 'inventory', 'finance', 'reports', 'hrd', 'settings'] as PermissionKey[]);
+  const visibleSections = sections.filter(s => sectionVisible(s, granted));
+  const defaultPath = visibleSections[0]?.path ?? '/dashboard';
+
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark compact"><Building2 aria-hidden="true" /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
-      <nav aria-label="Navigasi utama">{sections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><item.icon aria-hidden="true" /><span>{item.label}</span>{!item.ready && <span className="nav-status">Segera</span>}</NavLink>)}</nav>
+      <nav aria-label="Navigasi utama">{visibleSections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><item.icon aria-hidden="true" /><span>{item.label}</span>{!item.ready && <span className="nav-status">Segera</span>}</NavLink>)}</nav>
       <div className="sidebar-footer"><span className={`connection ${online ? 'online' : 'offline'}`}>{online ? <Wifi aria-hidden="true" /> : <WifiOff aria-hidden="true" />}{online ? 'Terhubung' : 'Offline'}</span><button className="nav-link logout" onClick={onLogout}><LogOut aria-hidden="true" />Keluar</button></div>
     </aside>
     {open && <button className="scrim" aria-label="Tutup menu" onClick={() => setOpen(false)} />}
@@ -85,7 +108,7 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
         <Route path="/hrd" element={<Hrd />} />
         <Route path="/settings" element={<SettingsPage />} />
         {Object.entries(moduleInfo).map(([key, value]) => <Route key={key} path={`/${key}`} element={<ModuleOverview {...value} />} />)}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to={defaultPath} replace />} />
       </Routes></div>
     </main>
   </div>;
