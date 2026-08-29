@@ -39,7 +39,7 @@ final class PaymentMethodController
         $data = $request->validate([
             'code' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9_-]+$/', Rule::unique('app_payment_methods', 'code')->ignore($id)],
             'name' => 'required|string|max:100',
-            'type' => 'required|in:cash,credit,transfer,qris,other',
+            'type' => 'required|in:cash,credit,transfer,qris,debt,other',
             'legacyKasCode' => 'nullable|string|max:15',
             'active' => 'required|boolean',
             'sortOrder' => 'required|integer|min:0|max:9999',

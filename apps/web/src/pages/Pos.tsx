@@ -123,36 +123,42 @@ function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer
   const { previewAndPrint, modal } = useReceiptPreview();
   useEffect(()=>{let active=true;setMethodsLoading(true);setMethodsError('');getPaymentMethods().then(list=>{if(!active)return;setMethods(list);setMethod(current=>current??list[0]??null);}).catch(err=>{if(active)setMethodsError(err instanceof Error?err.message:'Metode pembayaran gagal dimuat');}).finally(()=>{if(active)setMethodsLoading(false);});return()=>{active=false;};},[methodsRetry]);
   const isCash=method?.type==='cash';
+  // Cashbon is a debt sale by definition — no checkbox needed, it's implied by picking the method.
+  const isDebtMethod=method?.type==='debt';
+  const isCashLike=isCash||isDebtMethod;
   const isGeneralCustomer=customer.id==='general';
   const shortfall=Math.max(0,total-paid);
-  // Non-cash methods are paid in full (no change/kembalian); cash keeps the received-amount flow.
-  const effectivePaid=isCash?paid:total;
-  function pickMethod(m:PaymentMethod){setMethod(m);setError('');if(m.type==='cash')setPaid(total);else{setPaid(total);setReference('');setIsDebt(false);}}
+  const effectiveIsDebt=isDebtMethod||isDebt;
+  // Non-cash-like methods are paid in full (no change/kembalian); cash/cashbon keep the received-amount flow.
+  const effectivePaid=isCashLike?paid:total;
+  function pickMethod(m:PaymentMethod){setMethod(m);setError('');setIsDebt(false);if(m.type==='cash')setPaid(total);else if(m.type==='debt')setPaid(0);else{setPaid(total);setReference('');}}
   async function submit(){
     if(!method)return setError('Pilih metode pembayaran.');
-    if(isCash&&!isDebt&&paid<total)return setError('Uang diterima kurang dari total belanja. Centang "Pelanggan berhutang" kalau belum lunas.');
-    if(isCash&&isDebt&&isGeneralCustomer)return setError('Pilih pelanggan terdaftar untuk transaksi piutang, bukan Pelanggan Umum.');
+    if(isCashLike&&!effectiveIsDebt&&paid<total)return setError('Uang diterima kurang dari total belanja. Centang "Pelanggan berhutang" kalau belum lunas.');
+    if(effectiveIsDebt&&shortfall>0&&isGeneralCustomer)return setError('Pilih pelanggan terdaftar untuk transaksi piutang, bukan Pelanggan Umum.');
     if(saving)return;
     setSaving(true);setError('');
     try{
       const trimmedRef=reference.trim();
-      const debt=isCash&&isDebt&&shortfall>0;
-      const payload={customerId:customer.id,lines:cart.map(l=>({productId:l.product.id,unit:l.unit.name,qty:l.qty,price:l.unit.price,discount:l.discount})),paid:effectivePaid,idempotencyKey:idempotencyKey.current,paymentMethod:method.code,paymentRef:!isCash&&trimmedRef?trimmedRef:undefined,isDebt:debt,debtNote:debt&&debtNote.trim()?debtNote.trim():undefined};
+      const debt=effectiveIsDebt&&shortfall>0;
+      const payload={customerId:customer.id,lines:cart.map(l=>({productId:l.product.id,unit:l.unit.name,qty:l.qty,price:l.unit.price,discount:l.discount})),paid:effectivePaid,idempotencyKey:idempotencyKey.current,paymentMethod:method.code,paymentRef:!isCashLike&&trimmedRef?trimmedRef:undefined,isDebt:debt,debtNote:debt&&debtNote.trim()?debtNote.trim():undefined};
       const receiptLines=cart.map(l=>({productName:l.product.name,qty:l.qty,unitName:l.unit.name,unitPrice:l.unit.price,discount:l.discount}));
-      const result=await submitCheckout(payload,{customer,lines:receiptLines,paid:effectivePaid,total,methodName:method.name,reference:!isCash&&trimmedRef?trimmedRef:undefined},{ save:completeSale, print: r => previewAndPrint(r) });
+      const result=await submitCheckout(payload,{customer,lines:receiptLines,paid:effectivePaid,total,methodName:method.name,reference:!isCashLike&&trimmedRef?trimmedRef:undefined},{ save:completeSale, print: r => previewAndPrint(r) });
       onDone(result.invoice,result.printFailed);
     }catch(e){setError(e instanceof Error?e.message:'Transaksi gagal disimpan');setSaving(false)}
   }
   if (modal) return modal;
-  const submitDisabled=saving||methodsLoading||!method||(isCash&&!isDebt&&paid<total)||(isCash&&isDebt&&isGeneralCustomer);
+  const submitDisabled=saving||methodsLoading||!method||(isCashLike&&!effectiveIsDebt&&paid<total)||(effectiveIsDebt&&shortfall>0&&isGeneralCustomer);
   return <Modal title="Pembayaran" onClose={onClose}><div className="payment-total"><span>Total pembayaran</span><strong>{money.format(total)}</strong></div>
     <label>Metode pembayaran</label>
     {methodsLoading?<div className="empty-compact" role="status">Memuat metode…</div>:methodsError?<div className="inline-recovery" role="alert"><span>{methodsError}</span><button className="button secondary" onClick={()=>setMethodsRetry(v=>v+1)}>Coba lagi</button></div>:!methods.length?<div className="notice warning" role="alert">Belum ada metode pembayaran aktif. Tambahkan di Pengaturan.</div>:<div className="pay-method-picker" role="group" aria-label="Metode pembayaran">{methods.map((m,i)=><button key={m.id} type="button" data-autofocus={i===0?'true':undefined} className={method?.code===m.code?'active':''} aria-pressed={method?.code===m.code} onClick={()=>pickMethod(m)}>{m.name}</button>)}</div>}
-    {method&&isCash&&<><label>Uang diterima<input className="money-input" type="number" min={0} value={paid} onChange={e=>setPaid(Number(e.target.value))} onFocus={e=>e.currentTarget.select()} /></label><div className="quick-cash">{[total,Math.ceil(total/10000)*10000,Math.ceil(total/50000)*50000].filter((v,i,a)=>a.indexOf(v)===i).map(v=><button key={v} onClick={()=>setPaid(v)}>{money.format(v)}</button>)}</div>
-      {shortfall<=0?<div className="change"><span>Kembalian</span><strong>{money.format(Math.max(0,paid-total))}</strong></div>:<label className="checkbox-row"><input type="checkbox" checked={isDebt} onChange={e=>setIsDebt(e.target.checked)} /> Pelanggan berhutang (piutang) — sisa {money.format(shortfall)}</label>}
-      {isDebt&&shortfall>0&&<>{isGeneralCustomer&&<div className="notice warning" role="alert">Pilih pelanggan terdaftar dulu (bukan Pelanggan Umum) supaya piutang ini bisa ditagih.</div>}<label>Catatan piutang (opsional)<input className="money-input" type="text" maxLength={50} value={debtNote} onChange={e=>setDebtNote(e.target.value)} placeholder="Alasan berhutang, janji lunas kapan, dsb." /></label></>}
+    {method&&isCashLike&&<><label>Uang diterima<input className="money-input" type="number" min={0} value={paid} onChange={e=>setPaid(Number(e.target.value))} onFocus={e=>e.currentTarget.select()} /></label>
+      <div className="change"><span>Sisa pembayaran</span><strong>{money.format(shortfall)}</strong></div>
+      <div className="quick-cash">{[total,Math.ceil(total/10000)*10000,Math.ceil(total/50000)*50000].filter((v,i,a)=>a.indexOf(v)===i).map(v=><button key={v} onClick={()=>setPaid(v)}>{money.format(v)}</button>)}</div>
+      {shortfall<=0?<div className="change"><span>Kembalian</span><strong>{money.format(Math.max(0,paid-total))}</strong></div>:!isDebtMethod&&<label className="checkbox-row"><input type="checkbox" checked={isDebt} onChange={e=>setIsDebt(e.target.checked)} /> Pelanggan berhutang (piutang)</label>}
+      {effectiveIsDebt&&shortfall>0&&<>{isGeneralCustomer&&<div className="notice warning" role="alert">Pilih pelanggan terdaftar dulu (bukan Pelanggan Umum) supaya piutang ini bisa ditagih.</div>}<label>Catatan piutang (opsional)<input className="money-input" type="text" maxLength={50} value={debtNote} onChange={e=>setDebtNote(e.target.value)} placeholder="Alasan berhutang, janji lunas kapan, dsb." /></label></>}
     </>}
-    {method&&!isCash&&<label>Nomor referensi (opsional)<input className="money-input" type="text" maxLength={64} value={reference} onChange={e=>setReference(e.target.value)} placeholder="No. QRIS / transfer / approval" /></label>}
+    {method&&!isCashLike&&<label>Nomor referensi (opsional)<input className="money-input" type="text" maxLength={64} value={reference} onChange={e=>setReference(e.target.value)} placeholder="No. QRIS / transfer / approval" /></label>}
     {error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={submitDisabled}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }
 
 // View-only for now: editing a saved sale (adjusting lines/qty/price after the fact, with the

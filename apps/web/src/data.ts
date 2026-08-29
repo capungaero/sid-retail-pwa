@@ -116,13 +116,16 @@ export const demoSalesLog: SaleRecord[] = [
   { id: 'sale-47', invoice: 'DEMO-00000047', customerId: 'general', customerName: 'Pelanggan Umum', lines: [{ productId: '5', productName: 'Beras Premium 5 kg', unit: 'Karung', qty: 4, price: 76000, discount: 30400 }, { productId: '1', productName: 'Air Mineral 600 ml', unit: 'Botol', qty: 2, price: 3500, discount: 0 }], total: 280600, paid: 280600, change: 0, createdAt: '2026-08-28T13:02:00.000Z' }
 ];
 
-// Configurable payment methods (Pengaturan > Metode pembayaran). Mirrors the 4 defaults the
-// backend migration seeds. CASH maps to legacy kas account 'KT' (KAS TOKO).
+// Configurable payment methods (Pengaturan > Metode pembayaran). Mirrors the 5 defaults the
+// backend migration seeds. CASH maps to legacy kas account 'KT' (KAS TOKO). CASHBON (type
+// 'debt') is a debt sale by definition — checkout treats it like underpaid Tunai without needing
+// the "Pelanggan berhutang" checkbox.
 export const demoPaymentMethods: PaymentMethod[] = [
   { id: '1', code: 'CASH', name: 'Tunai', type: 'cash', legacyKasCode: 'KT', active: true, sortOrder: 1 },
   { id: '2', code: 'CREDIT', name: 'Kartu Kredit', type: 'credit', legacyKasCode: null, active: true, sortOrder: 2 },
   { id: '3', code: 'TRANSFER', name: 'Transfer', type: 'transfer', legacyKasCode: null, active: true, sortOrder: 3 },
-  { id: '4', code: 'QRIS', name: 'QRIS', type: 'qris', legacyKasCode: null, active: true, sortOrder: 4 }
+  { id: '4', code: 'QRIS', name: 'QRIS', type: 'qris', legacyKasCode: null, active: true, sortOrder: 4 },
+  { id: '5', code: 'CASHBON', name: 'Cashbon', type: 'debt', legacyKasCode: null, active: true, sortOrder: 5 }
 ];
 
 // One row per payment applied to a sale (denormalized method snapshot). Seeded for the three
