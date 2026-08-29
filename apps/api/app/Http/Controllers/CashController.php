@@ -12,8 +12,11 @@ final class CashController
     public function index(LegacyCashLedgerRepository $repo): JsonResponse
     {
         $entries = $repo->all();
-        $funding = DB::table('app_cash_entry_funding')->pluck('funding_source', 'ledger_id');
-        return response()->json(array_map(fn ($e) => $e + ['fundingSource' => $funding->get($e['id'])], $entries));
+        $funding = DB::table('app_cash_entry_funding')->get()->keyBy('ledger_id');
+        return response()->json(array_map(function ($e) use ($funding) {
+            $f = $funding->get($e['id']);
+            return $e + ['fundingSource' => $f?->funding_source, 'fundingCashierName' => $f?->cashier_name];
+        }, $entries));
     }
 
     public function store(Request $request, LegacyCashLedgerRepository $repo): JsonResponse
@@ -27,12 +30,20 @@ final class CashController
             'category' => 'required|string|max:25',
             'note' => 'nullable|string|max:50',
             'fundingSource' => 'required_if:direction,out|nullable|in:daily,loan',
+            // Only a 'daily' draw is attributed to one cashier's own takings - a 'loan' draw
+            // comes out of the overall pool, not any single cashier's day.
+            'fundingCashierName' => 'required_if:fundingSource,daily|nullable|string|max:100',
         ]);
         try {
             $entry = $repo->create($data['direction'], (float) $data['amount'], $data['category'], $data['note'] ?? null, $request->user()?->getKey(), $idempotencyKey);
             if ($data['direction'] === 'out') {
-                DB::table('app_cash_entry_funding')->insert(['ledger_id' => $entry['id'], 'funding_source' => $data['fundingSource'], 'created_at' => now()]);
+                DB::table('app_cash_entry_funding')->insert([
+                    'ledger_id' => $entry['id'], 'funding_source' => $data['fundingSource'],
+                    'cashier_name' => $data['fundingSource'] === 'daily' ? $data['fundingCashierName'] : null,
+                    'created_at' => now(),
+                ]);
                 $entry['fundingSource'] = $data['fundingSource'];
+                $entry['fundingCashierName'] = $data['fundingSource'] === 'daily' ? $data['fundingCashierName'] : null;
             }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000' && ($winner = Idempotency::find($idempotencyKey))) return response()->json($winner, 201);

@@ -347,10 +347,11 @@ export async function listCashEntries(): Promise<CashLedgerEntry[]> {
   return request('/finance/cash-entries');
 }
 
-export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
+export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
   if (!baseUrl) {
     const previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
-    const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
+    const isDaily = input.direction === 'out' && input.fundingSource === 'daily';
+    const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, fundingCashierName: isDaily ? input.fundingCashierName : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
     demoCashEntries.push(entry);
     return entry;
   }

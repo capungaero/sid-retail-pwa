@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
-import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, updateInstrumentStatus } from '../lib/api';
+import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
+import { cashierDailyCashTotals } from '../lib/reports';
 import { money } from '../lib/money';
-import type { CashDirection, CashFundingSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable } from '../types';
+import type { CashDirection, CashFundingSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
 
 const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint: string }[] = [
   { value: 'daily', label: 'Dari transaksi harian', hint: 'Diambil langsung dari hasil jualan hari ini' },
@@ -65,7 +66,7 @@ function CashTab() {
     <section className="panel flush">
       <div className="table-tools"><h2>Buku kas</h2><span className="status success">Saldo saat ini: {money.format(balance)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Catat transaksi kas</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
     </section>
     {adding && <CashEntryModal onClose={() => setAdding(false)} onSaved={entry => { setEntries(current => [...current, entry]); setAdding(false); }} />}
   </>;
@@ -74,16 +75,33 @@ function CashTab() {
 function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (entry: CashLedgerEntry) => void }) {
   const [direction, setDirection] = useState<CashDirection>('in'); const [amount, setAmount] = useState(0); const [category, setCategory] = useState(CASH_CATEGORIES[0]); const [note, setNote] = useState('');
   const [fundingSource, setFundingSource] = useState<CashFundingSource | null>(null);
+  const [fundingCashierName, setFundingCashierName] = useState('');
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  const [sales, setSales] = useState<SaleRecord[]>([]); const [cashMethodName, setCashMethodName] = useState<string | null>(null);
   const modalRef = useModalTrap(onClose);
+  // Fetched once, only actually needed if the cashier picks "dari transaksi harian" - loaded
+  // eagerly anyway so the picker has data ready the moment that option is chosen.
+  useEffect(() => {
+    listSales().then(setSales).catch(() => setSales([]));
+    getPaymentMethods().then(methods => setCashMethodName(methods.find(m => m.type === 'cash')?.name ?? null)).catch(() => setCashMethodName(null));
+  }, []);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const cashierTotals = useMemo(() => cashMethodName ? cashierDailyCashTotals(sales, todayKey, cashMethodName) : [], [sales, cashMethodName, todayKey]);
   // Generated once per modal open and reused across retries of the same submit attempt (e.g. a
   // client-side timeout after the server already succeeded), so a retry can't double-write.
   const idempotencyKey = useRef(crypto.randomUUID()).current;
   async function submit() {
     if (amount <= 0) return setError('Jumlah harus lebih dari 0.');
     if (direction === 'out' && !fundingSource) return setError('Pilih sumber dana.');
+    if (direction === 'out' && fundingSource === 'daily' && !fundingCashierName) return setError('Pilih kasir.');
     setSaving(true); setError('');
-    try { onSaved(await addCashEntry({ direction, amount, category, note: note.trim() || undefined, fundingSource: direction === 'out' ? fundingSource ?? undefined : undefined }, idempotencyKey)); }
+    try {
+      onSaved(await addCashEntry({
+        direction, amount, category, note: note.trim() || undefined,
+        fundingSource: direction === 'out' ? fundingSource ?? undefined : undefined,
+        fundingCashierName: direction === 'out' && fundingSource === 'daily' ? fundingCashierName : undefined,
+      }, idempotencyKey));
+    }
     catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan transaksi kas'); setSaving(false); }
   }
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="cash-title">
@@ -93,7 +111,14 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
       <button type="button" role="tab" aria-selected={direction === 'out'} className={`tab-button ${direction === 'out' ? 'active' : ''}`} onClick={() => setDirection('out')}>Kas keluar</button>
     </div>
     <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{CASH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
-    {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => setFundingSource(e.target.value as CashFundingSource)}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>{fundingSource && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}</label>}
+    {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>{fundingSource && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}</label>}
+    {direction === 'out' && fundingSource === 'daily' && <label>Kasir
+      <select value={fundingCashierName} onChange={e => setFundingCashierName(e.target.value)}>
+        <option value="" disabled>Pilih kasir…</option>
+        {cashierTotals.map(c => <option key={c.cashierName} value={c.cashierName}>{c.cashierName} — {money.format(c.amount)}</option>)}
+      </select>
+      {!cashierTotals.length && <small className="muted">Belum ada transaksi tunai hari ini per kasir.</small>}
+    </label>}
     <label>Jumlah<input type="number" min="0" value={amount} onChange={e => setAmount(Number(e.target.value))} onFocus={e => e.currentTarget.select()} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
     {error && <div className="notice error" role="alert">{error}</div>}

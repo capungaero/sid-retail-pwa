@@ -42,6 +42,18 @@ export function countDistinctTransactions(sales: { invoice: string; exchanges?: 
   return sales.filter(s => !exchangedInvoices.has(s.invoice)).length;
 }
 
+export type CashierCashTotal = { cashierName: string; amount: number };
+
+// Today's own cash-method (Tunai) revenue per cashier, netted the same way as netSaleTotal. Used
+// to show "berapa saldo tunai kasir X hari ini" when attributing a "dari transaksi harian" kas
+// keluar to a specific cashier - the picker shows exactly what that cashier is on the hook for.
+export function cashierDailyCashTotals(sales: SaleRecord[], date: string, cashMethodName: string): CashierCashTotal[] {
+  const map = new Map<string, number>();
+  sales.filter(s => s.createdAt.slice(0, 10) === date && s.methodName === cashMethodName && s.cashierName)
+    .forEach(s => map.set(s.cashierName!, (map.get(s.cashierName!) ?? 0) + netSaleTotal(s)));
+  return Array.from(map, ([cashierName, amount]) => ({ cashierName, amount })).sort((a, b) => b.amount - a.amount);
+}
+
 // Aggregates completed sales into transaction count, units sold, revenue and total discount given.
 export function summarizeSales(sales: SaleRecord[]): SalesSummary {
   const totals = sales.reduce<Omit<SalesSummary, 'count'>>((acc, sale) => {
