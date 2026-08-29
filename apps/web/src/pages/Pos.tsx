@@ -201,7 +201,8 @@ function ExchangeDialog({ invoice, line, onClose, onDone }: { invoice: string; l
   }
   return <Modal title={`Tukar barang · ${line.productName}`} onClose={onClose}>
     <p className="muted" style={{ marginTop: -8 }}>Barang lama dikembalikan ke stok otomatis. Pilih penggantinya di bawah.</p>
-    <label>Jumlah ditukar<input className="money-input" type="number" min={1} max={line.qty} value={qty} onChange={e => setQty(Math.max(1, Math.min(line.qty, Number(e.target.value))))} /></label>
+    <label>Jumlah ditukar <span className="muted">(dari {number.format(line.qty)} {line.unit} dibeli)</span></label>
+    <div className="qty-control"><button type="button" onClick={() => setQty(q => Math.max(1, q - 1))} disabled={qty <= 1} aria-label="Kurangi jumlah ditukar"><Minus /></button><span>{qty}</span><button type="button" onClick={() => setQty(q => Math.min(line.qty, q + 1))} disabled={qty >= line.qty} aria-label="Tambah jumlah ditukar"><Plus /></button></div>
     {!product ? <>
       <label className="search-box"><Search /><span className="sr-only">Cari barang pengganti</span><input data-autofocus="true" value={query} onChange={e => setQuery(e.target.value)} placeholder="Cari barang pengganti…" /></label>
       {query && <div className="search-results" role="listbox" aria-label="Hasil pencarian">{searchLoading ? <div className="empty-compact" role="status">Mencari barang…</div> : <>{results.slice(0, 6).map(p => <button key={p.id} role="option" aria-selected="false" onClick={() => pick(p)}><div><strong>{p.name}</strong><span>{p.code} · {p.barcode}</span></div><div><strong>{money.format(p.units[0].price)}</strong><span>Stok {number.format(p.stock)}</span></div></button>)}{!results.length && <div className="empty-compact">Barang tidak ditemukan</div>}</>}</div>}
