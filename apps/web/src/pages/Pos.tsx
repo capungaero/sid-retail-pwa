@@ -177,16 +177,19 @@ function SaleDetailModal({ sale, onClose, onReprint, reprinting }: { sale: SaleR
 function HistoryTab() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null); const [reprintingId, setReprintingId] = useState<string | null>(null);
-  const [cashierQuery, setCashierQuery] = useState(''); const [printingReport, setPrintingReport] = useState(false);
+  const [cashierQuery, setCashierQuery] = useState(''); const [methodFilter, setMethodFilter] = useState(''); const [printingReport, setPrintingReport] = useState(false);
   const { previewAndPrint, modal } = useReceiptPreview();
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const todayKey = new Date().toISOString().slice(0, 10);
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [sales, todayKey]);
+  const methodOptions = useMemo(() => Array.from(new Set(todaySales.map(s => s.methodName).filter((v): v is string => Boolean(v)))).sort(), [todaySales]);
   const visibleSales = useMemo(() => {
     const q = cashierQuery.trim().toLowerCase();
-    return q ? todaySales.filter(s => (s.cashierName || '').toLowerCase().includes(q)) : todaySales;
-  }, [todaySales, cashierQuery]);
+    return todaySales
+      .filter(s => !q || (s.cashierName || '').toLowerCase().includes(q))
+      .filter(s => !methodFilter || s.methodName === methodFilter);
+  }, [todaySales, cashierQuery, methodFilter]);
   const totalToday = useMemo(() => visibleSales.reduce((sum, s) => sum + s.total, 0), [visibleSales]);
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
@@ -218,17 +221,23 @@ function HistoryTab() {
     <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{visibleSales.length} transaksi · {money.format(totalToday)}</span></div>
       <div className="history-tools">
         <label className="search-box history-search"><Search aria-hidden="true" /><span className="sr-only">Cari nama kasir</span><input value={cashierQuery} onChange={e => setCashierQuery(e.target.value)} placeholder="Cari kasir…" /></label>
+        <label className="sr-only" htmlFor="history-method-filter">Filter metode pembayaran</label>
+        <select id="history-method-filter" className="history-method-filter" value={methodFilter} onChange={e => setMethodFilter(e.target.value)}>
+          <option value="">Semua metode</option>
+          {methodOptions.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
         <button className="button secondary" onClick={printReport} disabled={printingReport || !visibleSales.length}><Printer /> {printingReport ? 'Menyiapkan…' : 'Cetak laporan (A4)'}</button>
         <button className="button ghost" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
       </div>
     </div>
     {error && <div className="notice error" role="alert">{error}</div>}
-    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !visibleSales.length ? <div className="empty-state"><History /><p>{cashierQuery ? 'Tidak ada transaksi dari kasir tersebut.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
+    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !visibleSales.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
       {visibleSales.map(s => <tr key={s.id}>
         <td className="mono">{s.invoice}</td>
         <td>{new Date(s.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
         <td>{s.cashierName || '—'}</td>
         <td>{s.customerName || 'Tanpa nama'}</td>
+        <td>{s.methodName || '—'}</td>
         <td className="numeric mono">{money.format(s.total)}</td>
         <td><div className="row-actions"><button className="button ghost" onClick={() => setDetail(s)}>Detail</button><button className="button secondary" onClick={() => reprint(s)} disabled={reprintingId === s.id}><Printer /> {reprintingId === s.id ? '…' : 'Cetak ulang'}</button></div></td>
       </tr>)}

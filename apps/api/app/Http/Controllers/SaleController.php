@@ -51,7 +51,12 @@ final class SaleController
         $productIds = $items->flatten()->pluck($ic['product_code'])->unique()->values()->all();
         $stocks = DB::table($productTable)->whereIn($pc['id'], $productIds)->pluck($pc['stock'], $pc['id']);
 
-        $result = $sales->map(function ($sale) use ($sc, $ic, $items, $cashiers, $stocks) {
+        // One payment row per sale in v1 (see app_sale_payments migration) — method_name is
+        // denormalized there at checkout time, so this is stable even if the method is later
+        // renamed/deleted in Pengaturan.
+        $methodNames = DB::table('app_sale_payments')->whereIn('sale_id', $ids)->pluck('method_name', 'sale_id');
+
+        $result = $sales->map(function ($sale) use ($sc, $ic, $items, $cashiers, $stocks, $methodNames) {
             $lines = ($items->get($sale->{$sc['id']}) ?? collect())->map(function ($line) use ($ic, $stocks) {
                 $currentStock = (float) ($stocks->get($line->{$ic['product_code']}) ?? 0);
                 $qty = (float) $line->{$ic['qty']};
@@ -73,6 +78,7 @@ final class SaleController
                 'customerId' => (string) ($sale->{$sc['customer_code']} ?? ''),
                 'customerName' => (string) ($sale->{$sc['customer_name']} ?? 'Pelanggan Umum'),
                 'cashierName' => $sale->{$sc['cashier']} ? (string) ($cashiers->get($sale->{$sc['cashier']}) ?? $sale->{$sc['cashier']}) : null,
+                'methodName' => $methodNames->get($sale->{$sc['id']}),
                 'lines' => $lines,
                 'total' => (float) $sale->{$sc['total']},
                 'paid' => (float) $sale->{$sc['paid']},

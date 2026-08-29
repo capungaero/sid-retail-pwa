@@ -161,6 +161,7 @@ export async function listSales(): Promise<SaleRecord[]> {
     return demoSalesLog.map(sale => ({
       ...sale,
       cashierName: sale.customerId === 'general' ? 'Kasir Demo' : 'Admin Toko',
+      methodName: demoSalePayments.find(p => p.saleId === sale.invoice)?.methodName,
       lines: sale.lines.map(line => {
         const stockAfter = demoProducts.find(p => p.id === line.productId)?.stock ?? 0;
         return { ...line, stockAfter, stockBefore: stockAfter + line.qty };
