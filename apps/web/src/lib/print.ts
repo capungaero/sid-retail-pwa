@@ -1,6 +1,6 @@
 import type { Customer, PaperWidth, SaleRecord, StoreProfile } from '../types';
 import { money, number } from './money';
-import { netSaleTotal } from './reports';
+import { countDistinctTransactions, netSaleTotal } from './reports';
 
 // Deliberately flat and decoupled from CartLine: a receipt is printed both right after a
 // checkout (where lines come from the live cart) and when reprinting a past sale from history
@@ -58,10 +58,20 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, sto
   const ordered = [...sales].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const name = storeName || (import.meta.env.VITE_STORE_NAME as string | undefined) || 'SID Retail';
   const sections = ordered.map(sale => {
-    const rows = sale.lines.map((l, i) => `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td class="num">${money.format(l.price)}</td></tr>`).join('');
-    return `<section class="faktur"><p class="faktur-head">Faktur <strong>${escapeHtml(sale.invoice)}</strong> · ${new Date(sale.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · Kasir ${escapeHtml(sale.cashierName || '—')} · ${escapeHtml(sale.customerName || 'Pelanggan Umum')}</p><table><thead><tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th class="num">Harga</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+    const exchanges = sale.exchanges ?? [];
+    const exchangeFor = (productId: string, unit: string) => exchanges.find(x => x.oldProductId === productId && x.oldUnit === unit);
+    const rows = sale.lines.map((l, i) => {
+      const ex = exchangeFor(l.productId, l.unit);
+      const note = ex ? `<br><span class="ex-note">&#8644; Ditukar &rarr; ${escapeHtml(ex.newProductName)} (faktur ${escapeHtml(ex.newInvoice)})</span>` : '';
+      return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}${note}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td class="num">${money.format(l.price)}</td></tr>`;
+    }).join('');
+    const banner = exchanges.length
+      ? `<p class="faktur-flag">&#8644; Faktur ini sudah ditukar &mdash; barang pengganti tercatat di ${exchanges.map(x => `faktur ${escapeHtml(x.newInvoice)}`).join(', ')}.</p>`
+      : '';
+    return `<section class="faktur"><p class="faktur-head">Faktur <strong>${escapeHtml(sale.invoice)}</strong> · ${new Date(sale.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · Kasir ${escapeHtml(sale.cashierName || '—')} · ${escapeHtml(sale.customerName || 'Pelanggan Umum')}</p>${banner}<table><colgroup><col class="col-no"><col class="col-name"><col class="col-unit"><col class="col-qty"><col class="col-price"></colgroup><thead><tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th class="num">Harga</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join('');
   const grandTotal = ordered.reduce((sum, s) => sum + netSaleTotal(s), 0);
+  const transactionCount = countDistinctTransactions(ordered);
   return `<html><head><title>Laporan Transaksi Harian ${escapeHtml(dateLabel)}</title><style>
     @page{size:A4;margin:16mm}
     body{font:12px/1.4 Arial,sans-serif;color:#111}
@@ -69,14 +79,17 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, sto
     .sub{color:#555;margin:0 0 18px;font-size:12px}
     .faktur{margin-bottom:16px;break-inside:avoid}
     .faktur-head{font-size:11.5px;margin:0 0 4px;color:#333}
-    table{width:100%;border-collapse:collapse;font-size:11.5px}
-    th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
+    .faktur-flag{font-size:11px;margin:0 0 6px;padding:4px 8px;background:#fff4e0;border:1px solid #e8c27a;border-radius:3px;color:#7a5300}
+    table{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed}
+    .col-no{width:6%}.col-name{width:44%}.col-unit{width:14%}.col-qty{width:12%}.col-price{width:24%}
+    th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;word-wrap:break-word}
     th{background:#f1f1f1}
     .num{text-align:right}
+    .ex-note{font-size:10px;color:#7a5300}
     .grand{margin-top:10px;padding-top:10px;border-top:2px solid #111;text-align:right;font-size:14px;font-weight:bold}
   </style></head><body>
     <h1>${escapeHtml(name)}</h1>
-    <p class="sub">Laporan Transaksi Harian &middot; ${escapeHtml(dateLabel)} &middot; ${ordered.length} transaksi</p>
+    <p class="sub">Laporan Transaksi Harian &middot; ${escapeHtml(dateLabel)} &middot; ${transactionCount} transaksi</p>
     ${sections || '<p>Tidak ada transaksi.</p>'}
     <p class="grand">TOTAL KESELURUHAN: ${money.format(grandTotal)}</p>
   </body></html>`;
