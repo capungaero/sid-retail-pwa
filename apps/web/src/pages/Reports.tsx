@@ -116,18 +116,29 @@ function SalesPurchaseTab() {
 function StockReportTab() {
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterProduct, setFilterProduct] = useState('');
-  const load = () => { setLoading(true); setError(''); Promise.all([listProducts(), listStockMovements()]).then(([p, m]) => { setProducts(p); setMovements(m); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
+  const load = () => { setLoading(true); setError(''); Promise.all([listProducts(), listStockMovements(), listSales()]).then(([p, m, s]) => { setProducts(p); setMovements(m); setSales(s); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const filtered = filterProduct ? movements.filter(m => m.productId === filterProduct) : movements;
   const lowStock = useMemo(() => lowStockProducts(products), [products]);
+  // Net units actually sold per product: a line later swapped away via Tukar barang went back
+  // to stock, so its qty is backed out the same way netSaleTotal backs out its revenue.
+  const qtySoldByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    sales.forEach(sale => {
+      sale.lines.forEach(line => map.set(line.productId, (map.get(line.productId) ?? 0) + line.qty));
+      (sale.exchanges ?? []).forEach(x => map.set(x.oldProductId, (map.get(x.oldProductId) ?? 0) - x.oldQty));
+    });
+    return map;
+  }, [sales]);
   return <>
     {error && <div className="notice error" role="alert">{error}</div>}
     <section className="panel flush">
       <div className="table-tools"><h2>Stok minimum</h2><span className="status danger">{lowStock.length} barang perlu perhatian</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button></div>
-      {loading ? <div className="empty-state">Memuat data stok…</div> : !lowStock.length ? <div className="empty-state">Semua barang berada di atas stok minimum.</div> : <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Kategori</th><th className="numeric">Stok</th><th className="numeric">Stok minimum</th></tr></thead><tbody>{lowStock.map(p => <tr key={p.id}><td>{p.name}<small>{p.code}</small></td><td>{p.category}</td><td className={`numeric mono ${p.stock <= 0 ? 'danger-text' : ''}`}>{number.format(p.stock)}</td><td className="numeric mono">{number.format(p.minStock)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data stok…</div> : !lowStock.length ? <div className="empty-state">Semua barang berada di atas stok minimum.</div> : <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Kategori</th><th className="numeric">Stok</th><th className="numeric">Stok terjual</th><th className="numeric">Stok minimum</th></tr></thead><tbody>{lowStock.map(p => <tr key={p.id}><td>{p.name}<small>{p.code}</small></td><td>{p.category}</td><td className={`numeric mono ${p.stock <= 0 ? 'danger-text' : ''}`}>{number.format(p.stock)}</td><td className="numeric mono">{number.format(qtySoldByProduct.get(p.id) ?? 0)}</td><td className="numeric mono">{number.format(p.minStock)}</td></tr>)}</tbody></table></div>}
     </section>
     <section className="panel flush">
       <div className="table-tools"><h2>Kartu stok</h2><select value={filterProduct} onChange={e => setFilterProduct(e.target.value)} aria-label="Filter barang"><option value="">Semua barang</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
