@@ -183,6 +183,7 @@ export async function exchangeSale(oldInvoice: string, payload: ExchangePayload)
       total: newLineValue, paid: newLineValue, change: 0, createdAt: new Date().toISOString(),
     });
     demoStockMovements.push({ id: crypto.randomUUID(), productId: payload.oldProductId, productName: oldProduct?.name ?? payload.oldProductId, type: 'sales-return', qty: payload.oldQty, reference: oldInvoice, note: payload.reason || `Tukar ke ${newProduct.name}`, createdAt: new Date().toISOString() });
+    oldSale.exchanges = [...(oldSale.exchanges ?? []), { oldProductId: payload.oldProductId, oldUnit: payload.oldUnit, oldQty: payload.oldQty, newInvoice, newProductName: newProduct.name }];
 
     return { newInvoice, oldInvoice, total: newLineValue, diff };
   }
@@ -196,6 +197,7 @@ export async function listSales(): Promise<SaleRecord[]> {
       ...sale,
       cashierName: sale.customerId === 'general' ? 'Kasir Demo' : 'Admin Toko',
       methodName: demoSalePayments.find(p => p.saleId === sale.invoice)?.methodName,
+      exchanges: sale.exchanges,
       lines: sale.lines.map(line => {
         const stockAfter = demoProducts.find(p => p.id === line.productId)?.stock ?? 0;
         return { ...line, stockAfter, stockBefore: stockAfter + line.qty };

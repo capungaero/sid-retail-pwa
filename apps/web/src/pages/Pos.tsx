@@ -152,10 +152,13 @@ function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer
 // covers the customer-already-paid-but-changed-their-mind case without touching the original sale:
 // it restocks the old line and books the replacement as a brand new, linked transaction.
 function SaleDetailModal({ sale, onClose, onReprint, onExchange, reprinting }: { sale: SaleRecord; onClose: () => void; onReprint: () => void; onExchange: (line: SaleLine) => void; reprinting: boolean }) {
+  const exchanges = sale.exchanges ?? [];
+  const exchangeFor = (l: SaleLine) => exchanges.find(x => x.oldProductId === l.productId && x.oldUnit === l.unit);
   return <Modal title={`Detail ${sale.invoice}`} onClose={onClose}>
     <p className="muted" style={{ marginTop: -8 }}>{new Date(sale.createdAt).toLocaleString('id-ID')} · {sale.customerName || 'Tanpa nama'}</p>
+    {exchanges.length > 0 && <div className="notice info" role="status"><ArrowLeftRight /> Transaksi ini sudah ditukar. Barang pengganti tercatat di {exchanges.map(x => x.newInvoice).join(', ')}.</div>}
     <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Satuan</th><th className="numeric">Qty</th><th className="numeric">Harga</th><th className="numeric">Subtotal</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
-      {sale.lines.map((l,i) => <tr key={i}><td>{l.productName}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td><td><button className="button ghost" onClick={() => onExchange(l)}><ArrowLeftRight /> Tukar</button></td></tr>)}
+      {sale.lines.map((l,i) => { const ex = exchangeFor(l); return <tr key={i}><td>{l.productName}{ex && <span className="muted" style={{ display: 'block', fontSize: '.8em' }}>Ditukar → {ex.newProductName} ({ex.newInvoice})</span>}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td><td>{ex ? <span className="status">Ditukar</span> : <button className="button ghost" onClick={() => onExchange(l)}><ArrowLeftRight /> Tukar</button>}</td></tr>; })}
     </tbody></table></div>
     <div className="summary"><div><span>Total</span><strong>{money.format(sale.total)}</strong></div><div><span>Bayar</span><strong>{money.format(sale.paid)}</strong></div><div className="grand-total"><span>Kembalian</span><strong>{money.format(sale.change)}</strong></div></div>
     <div className="modal-actions"><button className="button secondary" onClick={onClose}>Tutup</button><button className="button primary" data-autofocus="true" onClick={onReprint} disabled={reprinting}><Printer /> {reprinting ? 'Menyiapkan…' : 'Cetak ulang'}</button></div>
@@ -278,7 +281,7 @@ function HistoryTab() {
     {error && <div className="notice error" role="alert">{error}</div>}
     {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !visibleSales.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
       {visibleSales.map(s => <tr key={s.id}>
-        <td className="mono">{s.invoice}</td>
+        <td className="mono">{s.invoice}{s.exchanges && s.exchanges.length > 0 && <span className="status" style={{ marginLeft: 6 }}>Ditukar</span>}</td>
         <td>{new Date(s.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
         <td>{s.cashierName || '—'}</td>
         <td>{s.customerName || 'Tanpa nama'}</td>

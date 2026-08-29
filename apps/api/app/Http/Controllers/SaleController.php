@@ -55,7 +55,11 @@ final class SaleController
         // renamed/deleted in Pengaturan.
         $methodNames = DB::table('app_sale_payments')->whereIn('sale_id', $ids)->pluck('method_name', 'sale_id');
 
-        $result = $sales->map(function ($sale) use ($sc, $ic, $items, $cashiers, $stocks, $methodNames) {
+        // Lines swapped out via Tukar barang. Keyed by the ORIGINAL invoice so its (untouched)
+        // detail view can flag which line was exchanged and to which new faktur.
+        $exchanges = DB::table('app_sale_exchanges')->whereIn('old_invoice', $ids)->get()->groupBy('old_invoice');
+
+        $result = $sales->map(function ($sale) use ($sc, $ic, $items, $cashiers, $stocks, $methodNames, $exchanges) {
             $lines = ($items->get($sale->{$sc['id']}) ?? collect())->map(function ($line) use ($ic, $stocks) {
                 $currentStock = (float) ($stocks->get($line->{$ic['product_code']}) ?? 0);
                 $qty = (float) $line->{$ic['qty']};
@@ -83,6 +87,13 @@ final class SaleController
                 'paid' => (float) $sale->{$sc['paid']},
                 'change' => (float) $sale->{$sc['change']},
                 'createdAt' => $createdAt,
+                'exchanges' => ($exchanges->get($sale->{$sc['id']}) ?? collect())->map(fn ($x) => [
+                    'oldProductId' => (string) $x->old_product_id,
+                    'oldUnit' => (string) $x->old_unit,
+                    'oldQty' => (float) $x->old_qty,
+                    'newInvoice' => (string) $x->new_invoice,
+                    'newProductName' => (string) $x->new_product_name,
+                ])->values(),
             ];
         })->values();
 
