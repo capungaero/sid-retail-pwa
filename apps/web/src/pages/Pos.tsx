@@ -4,6 +4,7 @@ import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getSto
 import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
+import { countDistinctTransactions, netSaleTotal } from '../lib/reports';
 import type { CartLine, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
@@ -238,7 +239,8 @@ function HistoryTab() {
       .filter(s => !q || (s.cashierName || '').toLowerCase().includes(q))
       .filter(s => !methodFilter || s.methodName === methodFilter);
   }, [todaySales, cashierQuery, methodFilter]);
-  const totalToday = useMemo(() => visibleSales.reduce((sum, s) => sum + s.total, 0), [visibleSales]);
+  const totalToday = useMemo(() => visibleSales.reduce((sum, s) => sum + netSaleTotal(s), 0), [visibleSales]);
+  const transactionCountToday = useMemo(() => countDistinctTransactions(visibleSales), [visibleSales]);
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
     try {
@@ -266,7 +268,7 @@ function HistoryTab() {
     finally { setPrintingReport(false); }
   }
   return <section className="pos-main history-tab">
-    <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{visibleSales.length} transaksi · {money.format(totalToday)}</span></div>
+    <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{transactionCountToday} transaksi · {money.format(totalToday)}</span></div>
       <div className="history-tools">
         <label className="search-box history-search"><Search aria-hidden="true" /><span className="sr-only">Cari nama kasir</span><input value={cashierQuery} onChange={e => setCashierQuery(e.target.value)} placeholder="Cari kasir…" /></label>
         <label className="sr-only" htmlFor="history-method-filter">Filter metode pembayaran</label>

@@ -22,14 +22,24 @@ final class DailyReportController
         $sales = DB::table($saleTable)->whereDate($sc['date'], $date)
             ->get([$sc['id'] . ' as id', $sc['total'] . ' as total']);
 
-        $totalRevenue = (float) $sales->sum(fn ($s) => (float) $s->total);
-        $transactionCount = $sales->count();
-
         if ($sales->isEmpty()) {
             return response()->json(['date' => $date, 'totalRevenue' => 0.0, 'transactionCount' => 0, 'byMethod' => []]);
         }
 
         $saleIds = $sales->pluck('id')->all();
+
+        // A Tukar barang exchange books its replacement as its own new invoice, so a raw row
+        // count reads one customer visit as two transactions — exclude any of the day's sales
+        // that are themselves the new-invoice side of an exchange (its origin already counts).
+        $exchangeNewInvoices = DB::table('app_sale_exchanges')->whereIn('new_invoice', $saleIds)->pluck('new_invoice');
+        $transactionCount = $sales->count() - $exchangeNewInvoices->unique()->count();
+
+        // Lines this day's sales later gave up via Tukar barang — subtract so a returned line's
+        // revenue isn't still counted here on top of the replacement item's own new invoice.
+        $exchangedOutBySale = DB::table('app_sale_exchanges')->whereIn('old_invoice', $saleIds)
+            ->selectRaw('old_invoice, SUM(old_line_value) as amount')->groupBy('old_invoice')->pluck('amount', 'old_invoice');
+        $netTotal = fn ($sale) => (float) $sale->total - (float) ($exchangedOutBySale->get($sale->id) ?? 0);
+        $totalRevenue = (float) $sales->sum($netTotal);
 
         // Payment rows for this day's sales, grouped by method (snapshot name).
         $payments = DB::table('app_sale_payments')
@@ -55,7 +65,7 @@ final class DailyReportController
                 'methodCode' => '__untracked__',
                 'methodName' => 'Lainnya / tidak tercatat',
                 'count' => $untracked->count(),
-                'amount' => (float) $untracked->sum(fn ($s) => (float) $s->total),
+                'amount' => (float) $untracked->sum($netTotal),
             ];
         }
 

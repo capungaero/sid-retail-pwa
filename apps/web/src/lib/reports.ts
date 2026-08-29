@@ -1,5 +1,5 @@
 import { payableOutstanding, receivableOutstanding } from './finance';
-import type { CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
+import type { CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleExchangeInfo, SaleRecord } from '../types';
 
 export type DateRange = { start?: string; end?: string };
 
@@ -18,13 +18,34 @@ export function filterByRange<T extends { createdAt: string }>(items: T[], range
 
 export type SalesSummary = { count: number; qtySold: number; revenue: number; discount: number };
 
+// Sum of a sale's own lines later swapped out via Tukar barang — the portion of its total that
+// no longer reflects a kept item (the replacement is its own new sale, counted on its own).
+export function exchangedOutValue(sale: { exchanges?: SaleExchangeInfo[] }): number {
+  return (sale.exchanges ?? []).reduce((sum, x) => sum + x.oldLineValue, 0);
+}
+
+// A sale's revenue contribution net of anything later exchanged away, so an old invoice's total
+// isn't double-counted against the replacement item's own new invoice.
+export function netSaleTotal(sale: { total: number; exchanges?: SaleExchangeInfo[] }): number {
+  return sale.total - exchangedOutValue(sale);
+}
+
+// A Tukar barang exchange books its replacement item as its own new invoice, so a naive row
+// count reads one customer visit as two transactions. This counts a set of sales the way a
+// cashier would: an exchange's new invoice is a continuation of its original, not a fresh one.
+export function countDistinctTransactions(sales: { invoice: string; exchanges?: SaleExchangeInfo[] }[]): number {
+  const exchangedInvoices = new Set(sales.flatMap(s => (s.exchanges ?? []).map(x => x.newInvoice)));
+  return sales.filter(s => !exchangedInvoices.has(s.invoice)).length;
+}
+
 // Aggregates completed sales into transaction count, units sold, revenue and total discount given.
 export function summarizeSales(sales: SaleRecord[]): SalesSummary {
-  return sales.reduce<SalesSummary>((acc, sale) => {
+  const totals = sales.reduce<Omit<SalesSummary, 'count'>>((acc, sale) => {
     const qty = sale.lines.reduce((sum, line) => sum + line.qty, 0);
     const discount = sale.lines.reduce((sum, line) => sum + line.discount, 0);
-    return { count: acc.count + 1, qtySold: acc.qtySold + qty, revenue: acc.revenue + sale.total, discount: acc.discount + discount };
-  }, { count: 0, qtySold: 0, revenue: 0, discount: 0 });
+    return { qtySold: acc.qtySold + qty, revenue: acc.revenue + netSaleTotal(sale), discount: acc.discount + discount };
+  }, { qtySold: 0, revenue: 0, discount: 0 });
+  return { count: countDistinctTransactions(sales), ...totals };
 }
 
 export type PurchaseSummary = { count: number; orderedValue: number; receivedValue: number };
@@ -59,10 +80,18 @@ export type ProfitLoss = { revenue: number; cogs: number; grossProfit: number; m
 export function calculateProfitLoss(sales: SaleRecord[], products: Product[]): ProfitLoss {
   const costByProduct = new Map(products.map(p => [p.id, p.cost]));
   let revenue = 0, cogs = 0;
-  sales.forEach(sale => sale.lines.forEach(line => {
-    revenue += line.qty * line.price - line.discount;
-    cogs += line.qty * (costByProduct.get(line.productId) ?? 0);
-  }));
+  sales.forEach(sale => {
+    sale.lines.forEach(line => {
+      revenue += line.qty * line.price - line.discount;
+      cogs += line.qty * (costByProduct.get(line.productId) ?? 0);
+    });
+    // Lines later swapped away via Tukar barang went back to stock — back out both their revenue
+    // and their cost of goods, or a returned item's margin would stay counted after it left.
+    (sale.exchanges ?? []).forEach(x => {
+      revenue -= x.oldLineValue;
+      cogs -= x.oldQty * (costByProduct.get(x.oldProductId) ?? 0);
+    });
+  });
   const grossProfit = revenue - cogs;
   return { revenue, cogs, grossProfit, margin: revenue > 0 ? grossProfit / revenue : 0 };
 }
@@ -85,7 +114,7 @@ export function summarizePayablesBySupplier(payables: Payable[]): PartyBalance[]
 // (typically legacy sales predating this feature). Kept in sync with the backend.
 export const UNTRACKED_METHOD_CODE = '__untracked__';
 
-export type RecapSale = { invoice: string; total: number; createdAt: string };
+export type RecapSale = { invoice: string; total: number; createdAt: string; exchanges?: SaleExchangeInfo[] };
 export type RecapPayment = { saleId: string; methodCode: string; methodName: string; amount: number };
 
 // Builds a per-payment-method daily recap for a single day (yyyy-mm-dd). Sales are joined to
@@ -106,10 +135,10 @@ export function buildDailyRecap(date: string, sales: RecapSale[], payments: Reca
   const trackedIds = new Set(dayPayments.map(p => p.saleId));
   const untracked = daySales.filter(s => !trackedIds.has(s.invoice));
   if (untracked.length) {
-    byMethod.push({ methodCode: UNTRACKED_METHOD_CODE, methodName: 'Lainnya / tidak tercatat', count: untracked.length, amount: untracked.reduce((sum, s) => sum + s.total, 0) });
+    byMethod.push({ methodCode: UNTRACKED_METHOD_CODE, methodName: 'Lainnya / tidak tercatat', count: untracked.length, amount: untracked.reduce((sum, s) => sum + netSaleTotal(s), 0) });
   }
   byMethod.sort((a, b) => b.amount - a.amount);
-  return { date, totalRevenue: daySales.reduce((sum, s) => sum + s.total, 0), transactionCount: daySales.length, byMethod };
+  return { date, totalRevenue: daySales.reduce((sum, s) => sum + netSaleTotal(s), 0), transactionCount: countDistinctTransactions(daySales), byMethod };
 }
 
 export type MethodRecapRow = DailyMethodRecap & { percent: number };

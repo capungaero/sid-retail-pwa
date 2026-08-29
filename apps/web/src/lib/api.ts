@@ -176,14 +176,16 @@ export async function exchangeSale(oldInvoice: string, payload: ExchangePayload)
     const method = demoPaymentMethods.find(m => m.code === payload.paymentMethod);
     const newInvoice = `DEMO-${Date.now().toString().slice(-8)}`;
 
-    demoSalePayments.push({ saleId: newInvoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: Math.max(0, diff), reference: payload.paymentRef, createdAt: new Date().toISOString() });
+    // amount is the SIGNED diff (never clamped to 0) — negative when kembalian is handed back, so
+    // a per-method cash sum nets out correctly instead of overstating what the store actually kept.
+    demoSalePayments.push({ saleId: newInvoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: diff, reference: payload.paymentRef, createdAt: new Date().toISOString() });
     demoSalesLog.unshift({
       id: crypto.randomUUID(), invoice: newInvoice, customerId: oldSale.customerId, customerName: oldSale.customerName,
       lines: [{ productId: payload.newProductId, productName: newProduct.name, unit: payload.newUnit, qty: payload.newQty, price: payload.newPrice, discount: newDiscount }],
       total: newLineValue, paid: newLineValue, change: 0, createdAt: new Date().toISOString(),
     });
     demoStockMovements.push({ id: crypto.randomUUID(), productId: payload.oldProductId, productName: oldProduct?.name ?? payload.oldProductId, type: 'sales-return', qty: payload.oldQty, reference: oldInvoice, note: payload.reason || `Tukar ke ${newProduct.name}`, createdAt: new Date().toISOString() });
-    oldSale.exchanges = [...(oldSale.exchanges ?? []), { oldProductId: payload.oldProductId, oldUnit: payload.oldUnit, oldQty: payload.oldQty, newInvoice, newProductName: newProduct.name }];
+    oldSale.exchanges = [...(oldSale.exchanges ?? []), { oldProductId: payload.oldProductId, oldUnit: payload.oldUnit, oldQty: payload.oldQty, oldLineValue, newInvoice, newProductName: newProduct.name }];
 
     return { newInvoice, oldInvoice, total: newLineValue, diff };
   }

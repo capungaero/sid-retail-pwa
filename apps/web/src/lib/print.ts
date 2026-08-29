@@ -1,5 +1,6 @@
 import type { Customer, PaperWidth, SaleRecord, StoreProfile } from '../types';
 import { money, number } from './money';
+import { netSaleTotal } from './reports';
 
 // Deliberately flat and decoupled from CartLine: a receipt is printed both right after a
 // checkout (where lines come from the live cart) and when reprinting a past sale from history
@@ -60,7 +61,7 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, sto
     const rows = sale.lines.map((l, i) => `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td class="num">${money.format(l.price)}</td></tr>`).join('');
     return `<section class="faktur"><p class="faktur-head">Faktur <strong>${escapeHtml(sale.invoice)}</strong> · ${new Date(sale.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · Kasir ${escapeHtml(sale.cashierName || '—')} · ${escapeHtml(sale.customerName || 'Pelanggan Umum')}</p><table><thead><tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th class="num">Harga</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join('');
-  const grandTotal = ordered.reduce((sum, s) => sum + s.total, 0);
+  const grandTotal = ordered.reduce((sum, s) => sum + netSaleTotal(s), 0);
   return `<html><head><title>Laporan Transaksi Harian ${escapeHtml(dateLabel)}</title><style>
     @page{size:A4;margin:16mm}
     body{font:12px/1.4 Arial,sans-serif;color:#111}

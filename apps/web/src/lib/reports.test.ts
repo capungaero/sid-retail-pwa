@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import { buildDailyRecap, calculateProfitLoss, cashPosition, countDistinctTransactions, exchangedOutValue, filterByRange, lowStockProducts, netSaleTotal, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
 import type { CashLedgerEntry, DailyMethodRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
@@ -44,6 +44,50 @@ const orders: PurchaseOrder[] = [
   { id: 'po2', reference: 'PO-2', supplierId: 'sup-2', status: 'received', createdAt: '2026-08-02T00:00:00.000Z', lines: [{ productId: '2', productName: 'B', unit: 'Pcs', qty: 5, cost: 200, receivedQty: 5 }] }
 ];
 
+// Sunlight 640 (Rp 9.000) sold, then swapped for the cheaper Sunlight 260 (Rp 4.500) via Tukar
+// barang. The original invoice is never mutated — its own total is still 9.000 in isolation —
+// but its exchanged line's value (9.000, oldLineValue) must be backed out of any AGGREGATE so
+// the two invoices combined read as one net Rp 4.500 sale, not a double-counted Rp 13.500.
+const oldExchangedSale: SaleRecord = {
+  id: 's1', invoice: 'INV-OLD', customerId: 'general', customerName: 'Umum',
+  lines: [{ productId: 'sunlight-640', productName: 'Sunlight 640', unit: 'Pcs', qty: 1, price: 9000, discount: 0 }],
+  total: 9000, paid: 9000, change: 0, createdAt: '2026-08-22T09:00:00.000Z',
+  exchanges: [{ oldProductId: 'sunlight-640', oldUnit: 'Pcs', oldQty: 1, oldLineValue: 9000, newInvoice: 'INV-NEW', newProductName: 'Sunlight 260' }],
+};
+const newExchangeSale: SaleRecord = {
+  id: 's2', invoice: 'INV-NEW', customerId: 'general', customerName: 'Umum',
+  lines: [{ productId: 'sunlight-260', productName: 'Sunlight 260', unit: 'Pcs', qty: 1, price: 4500, discount: 0 }],
+  total: 4500, paid: 4500, change: 0, createdAt: '2026-08-22T09:05:00.000Z',
+};
+
+describe('exchangedOutValue / netSaleTotal', () => {
+  it('is zero for a sale with no exchanges', () => {
+    expect(exchangedOutValue(newExchangeSale)).toBe(0);
+    expect(netSaleTotal(newExchangeSale)).toBe(4500);
+  });
+  it('nets an exchanged line off the old invoice total', () => {
+    expect(exchangedOutValue(oldExchangedSale)).toBe(9000);
+    expect(netSaleTotal(oldExchangedSale)).toBe(0);
+  });
+});
+
+describe('summarizeSales with an exchange', () => {
+  it('counts the pair as one net Rp 4.500 sale, not Rp 13.500, and as one transaction', () => {
+    const result = summarizeSales([oldExchangedSale, newExchangeSale]);
+    expect(result.revenue).toBe(4500);
+    expect(result.count).toBe(1);
+  });
+});
+
+describe('countDistinctTransactions', () => {
+  it('counts unrelated sales at face value', () => {
+    expect(countDistinctTransactions([newExchangeSale])).toBe(1);
+  });
+  it('excludes an exchange new-invoice so a swap reads as one transaction, not two', () => {
+    expect(countDistinctTransactions([oldExchangedSale, newExchangeSale])).toBe(1);
+  });
+});
+
 describe('summarizePurchases', () => {
   it('sums ordered value and received value separately', () => {
     expect(summarizePurchases(orders)).toEqual({ count: 2, orderedValue: 10 * 100 + 5 * 200, receivedValue: 4 * 100 + 5 * 200 });
@@ -86,6 +130,15 @@ describe('calculateProfitLoss', () => {
   });
   it('returns zero margin when there is no revenue', () => {
     expect(calculateProfitLoss([], products).margin).toBe(0);
+  });
+  it('backs out revenue and COGS for a line later swapped away', () => {
+    const swappedProducts: Product[] = [
+      { id: 'sunlight-640', code: 'A', barcode: '1', name: 'Sunlight 640', category: 'x', stock: 0, minStock: 0, cost: 7000, active: true, units: [] },
+      { id: 'sunlight-260', code: 'B', barcode: '2', name: 'Sunlight 260', category: 'x', stock: 0, minStock: 0, cost: 3500, active: true, units: [] },
+    ];
+    const result = calculateProfitLoss([oldExchangedSale, newExchangeSale], swappedProducts);
+    expect(result.revenue).toBe(4500);
+    expect(result.cogs).toBe(3500);
   });
 });
 
@@ -131,6 +184,23 @@ describe('buildDailyRecap', () => {
   it('returns an empty breakdown for a day with no sales', () => {
     const recap = buildDailyRecap('2026-08-01', sales, payments);
     expect(recap).toEqual({ date: '2026-08-01', totalRevenue: 0, transactionCount: 0, byMethod: [] });
+  });
+  it('nets an exchange to a cheaper item down, and reconciles with the signed payment diff', () => {
+    // Old invoice untouched (paid in full, Rp 9.000 Tunai); new invoice's payment is the SIGNED
+    // diff (-4.500, kembalian), never clamped to zero — so byMethod still sums to totalRevenue.
+    const daySales = [
+      { invoice: 'INV-OLD', total: 9000, createdAt: '2026-08-22T09:00:00.000Z', exchanges: oldExchangedSale.exchanges },
+      { invoice: 'INV-NEW', total: 4500, createdAt: '2026-08-22T09:05:00.000Z' },
+    ];
+    const dayPayments = [
+      { saleId: 'INV-OLD', methodCode: 'CASH', methodName: 'Tunai', amount: 9000 },
+      { saleId: 'INV-NEW', methodCode: 'CASH', methodName: 'Tunai', amount: -4500 },
+    ];
+    const recap = buildDailyRecap('2026-08-22', daySales, dayPayments);
+    expect(recap.totalRevenue).toBe(4500);
+    expect(recap.transactionCount).toBe(1);
+    const sum = recap.byMethod.reduce((s, m) => s + m.amount, 0);
+    expect(sum).toBe(recap.totalRevenue);
   });
 });
 

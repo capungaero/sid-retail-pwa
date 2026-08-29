@@ -91,6 +91,7 @@ final class SaleController
                     'oldProductId' => (string) $x->old_product_id,
                     'oldUnit' => (string) $x->old_unit,
                     'oldQty' => (float) $x->old_qty,
+                    'oldLineValue' => (float) $x->old_line_value,
                     'newInvoice' => (string) $x->new_invoice,
                     'newProductName' => (string) $x->new_product_name,
                 ])->values(),

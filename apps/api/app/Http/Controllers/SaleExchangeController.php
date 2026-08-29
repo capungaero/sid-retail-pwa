@@ -67,10 +67,13 @@ final class SaleExchangeController
                 $diff = round($newLineValue - $oldLineValue, 2);
                 // The new sale is always recorded as fully settled — its "payment" is partly the
                 // trade-in value of the returned item and partly the cash difference below, which
-                // nets out to the new item's full price. Only the actual cash difference (if any)
-                // is written to app_sale_payments, same "record what really moved" rule the debt
-                // sales code used to follow.
-                $collected = max(0.0, $diff);
+                // nets out to the new item's full price. app_sale_payments.amount is written as the
+                // SIGNED diff (positive = kurang bayar collected, negative = kembalian handed back),
+                // never clamped to zero — that negative leg is what lets a per-method cash recap
+                // (SUM(amount) grouped by method) net out to the real cash retained, matching the
+                // revenue reports below, which subtract old_line_value from the old invoice instead
+                // of letting both invoices' full totals double-count the same physical item.
+                $collected = $diff;
 
                 $today = now()->toDateString();
                 DB::table('app_invoice_counters')->insertOrIgnore(['counter_date' => $today, 'last_seq' => 0]);

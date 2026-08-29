@@ -64,7 +64,7 @@ export type PaymentInstrument = { id: string; kind: InstrumentKind; reference: s
 export type SaleLine = { productId: string; productName: string; unit: string; qty: number; price: number; discount: number; stockBefore?: number; stockAfter?: number };
 // Attached to the ORIGINAL sale for every line that was later swapped out via Tukar barang, so
 // the untouched original invoice can still show a "sudah ditukar → faktur baru" note.
-export type SaleExchangeInfo = { oldProductId: string; oldUnit: string; oldQty: number; newInvoice: string; newProductName: string };
+export type SaleExchangeInfo = { oldProductId: string; oldUnit: string; oldQty: number; oldLineValue: number; newInvoice: string; newProductName: string };
 export type SaleRecord = { id: string; invoice: string; customerId: string; customerName: string; cashierName?: string | null; methodName?: string | null; lines: SaleLine[]; total: number; paid: number; change: number; createdAt: string; exchanges?: SaleExchangeInfo[] };
 
 export type Employee = { id: string; name: string; role: string };
