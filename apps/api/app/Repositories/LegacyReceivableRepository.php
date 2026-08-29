@@ -50,18 +50,6 @@ final class LegacyReceivableRepository
         });
     }
 
-    // Auto-created inside SaleController's transaction when a cashier marks a cash sale as
-    // "pelanggan berhutang" - kode is derived from the (already-unique) invoice number, so no
-    // collision retry is needed here.
-    public function createForSale(string $customerId, float $amount, string $invoice, ?string $note, ?string $operator): void
-    {
-        $table = config('sid.receivable.table'); $c = config('sid.receivable.columns');
-        DB::table($table)->insert([
-            $c['id'] => 'PWA-P-' . $invoice, $c['date'] => now()->toDateString(), $c['customer_code'] => $customerId,
-            $c['amount'] => $amount, $c['note'] => $note ? mb_substr($note, 0, 50) : "Piutang dari $invoice", $c['operator'] => $operator,
-        ]);
-    }
-
     private function uniqueKode(string $table, string $idColumn, string $prefix): string
     {
         for ($attempt = 0; $attempt < 5; $attempt++) {

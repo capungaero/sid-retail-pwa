@@ -135,10 +135,7 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
     const total = payload.lines.reduce((sum, line) => sum + line.qty * line.price - line.discount, 0);
     const customer = demoCustomers.find(c => c.id === payload.customerId);
     const method = demoPaymentMethods.find(m => m.code === payload.paymentMethod);
-    const isDebt = !!payload.isDebt && payload.paid < total;
-    if (isDebt && !customer) throw new Error('Pilih pelanggan terdaftar untuk transaksi piutang, bukan Pelanggan Umum.');
-    demoSalePayments.push({ saleId: invoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: isDebt ? payload.paid : total, reference: payload.paymentRef, createdAt: new Date().toISOString() });
-    if (isDebt) demoReceivables.push({ id: crypto.randomUUID(), customerId: payload.customerId, customerName: customer!.name, reference: `P-${invoice}`, amount: total - payload.paid, payments: [], createdAt: new Date().toISOString() });
+    demoSalePayments.push({ saleId: invoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: total, reference: payload.paymentRef, createdAt: new Date().toISOString() });
     demoSalesLog.unshift({
       id: crypto.randomUUID(),
       invoice,
