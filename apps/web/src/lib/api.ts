@@ -257,7 +257,10 @@ export async function deletePaymentMethod(id: string): Promise<void> {
 // Per-payment-method revenue recap for one day (defaults to today).
 export async function getDailyRecap(date?: string): Promise<DailyRecap> {
   const day = date ?? new Date().toISOString().slice(0, 10);
-  if (!baseUrl) return buildDailyRecap(day, demoSalesLog, demoSalePayments);
+  if (!baseUrl) {
+    const cash = demoPaymentMethods.find(m => m.type === 'cash');
+    return buildDailyRecap(day, demoSalesLog, demoSalePayments, demoCashEntries, cash ? { code: cash.code, name: cash.name } : undefined);
+  }
   return request(`/reports/daily?date=${encodeURIComponent(day)}`);
 }
 

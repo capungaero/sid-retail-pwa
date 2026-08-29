@@ -191,6 +191,28 @@ describe('buildDailyRecap', () => {
     const recap = buildDailyRecap('2026-08-01', sales, payments);
     expect(recap).toEqual({ date: '2026-08-01', totalRevenue: 0, transactionCount: 0, byMethod: [] });
   });
+  it('nets a "dari transaksi harian" kas keluar out of totalRevenue and the cash bucket', () => {
+    const cashEntries: CashLedgerEntry[] = [
+      { id: 'k1', direction: 'out', amount: 5000, category: 'Biaya operasional', fundingSource: 'daily', balanceAfter: 0, createdAt: '2026-08-22T07:00:00.000Z' },
+      // Not netted: wrong day, wrong direction, or funded from the loan pool instead.
+      { id: 'k2', direction: 'out', amount: 999, category: 'x', fundingSource: 'daily', balanceAfter: 0, createdAt: '2026-08-21T07:00:00.000Z' },
+      { id: 'k3', direction: 'in', amount: 999, category: 'x', balanceAfter: 0, createdAt: '2026-08-22T07:00:00.000Z' },
+      { id: 'k4', direction: 'out', amount: 999, category: 'x', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-22T07:00:00.000Z' },
+    ];
+    const recap = buildDailyRecap('2026-08-22', sales, payments, cashEntries, { code: 'CASH', name: 'Tunai' });
+    expect(recap.totalRevenue).toBe(13000); // 18000 - 5000
+    expect(recap.byMethod.find(m => m.methodCode === 'CASH')?.amount).toBe(5000); // 10000 - 5000
+    const sum = recap.byMethod.reduce((s, m) => s + m.amount, 0);
+    expect(sum).toBe(recap.totalRevenue);
+  });
+  it('creates a cash bucket for a "dari transaksi harian" draw when no cash sale exists that day', () => {
+    const cashOnlySales = [{ invoice: 'INV-QRIS', total: 5000, createdAt: '2026-08-23T09:00:00.000Z' }];
+    const cashOnlyPayments = [{ saleId: 'INV-QRIS', methodCode: 'QRIS', methodName: 'QRIS', amount: 5000 }];
+    const cashEntries: CashLedgerEntry[] = [{ id: 'k1', direction: 'out', amount: 2000, category: 'x', fundingSource: 'daily', balanceAfter: 0, createdAt: '2026-08-23T07:00:00.000Z' }];
+    const recap = buildDailyRecap('2026-08-23', cashOnlySales, cashOnlyPayments, cashEntries, { code: 'CASH', name: 'Tunai' });
+    expect(recap.totalRevenue).toBe(3000);
+    expect(recap.byMethod.find(m => m.methodCode === 'CASH')).toEqual({ methodCode: 'CASH', methodName: 'Tunai', count: 0, amount: -2000 });
+  });
   it('nets an exchange to a cheaper item down, and reconciles with the signed payment diff', () => {
     // Old invoice untouched (paid in full, Rp 9.000 Tunai); new invoice's payment is the SIGNED
     // diff (-4.500, kembalian), never clamped to zero — so byMethod still sums to totalRevenue.

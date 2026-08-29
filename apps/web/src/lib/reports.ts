@@ -125,7 +125,10 @@ export type RecapPayment = { saleId: string; methodCode: string; methodName: str
 // payment rows by invoice; sales with no payment row are bucketed as "Lainnya / tidak tercatat"
 // so byMethod always reconciles with totalRevenue (the actual sum of the day's sales). Mirrors
 // the backend DailyReportController so the demo path and the real path agree.
-export function buildDailyRecap(date: string, sales: RecapSale[], payments: RecapPayment[]): DailyRecap {
+// A kas keluar entry funded "dari transaksi harian" is also netted out of totalRevenue and the
+// cash-type method's bucket, since that cash physically left today's takings. "Dari kas
+// pinjaman" entries are NOT netted here — they're drawn from the overall pool, not today's sales.
+export function buildDailyRecap(date: string, sales: RecapSale[], payments: RecapPayment[], cashEntries: CashLedgerEntry[] = [], cashMethod?: { code: string; name: string }): DailyRecap {
   const daySales = sales.filter(s => s.createdAt.slice(0, 10) === date);
   const dayIds = new Set(daySales.map(s => s.invoice));
   const dayPayments = payments.filter(p => dayIds.has(p.saleId));
@@ -141,8 +144,18 @@ export function buildDailyRecap(date: string, sales: RecapSale[], payments: Reca
   if (untracked.length) {
     byMethod.push({ methodCode: UNTRACKED_METHOD_CODE, methodName: 'Lainnya / tidak tercatat', count: untracked.length, amount: untracked.reduce((sum, s) => sum + netSaleTotal(s), 0) });
   }
+  const drawnFromDaily = cashEntries.filter(e => e.direction === 'out' && e.fundingSource === 'daily' && e.createdAt.slice(0, 10) === date).reduce((sum, e) => sum + e.amount, 0);
+  let totalRevenue = daySales.reduce((sum, s) => sum + netSaleTotal(s), 0);
+  if (drawnFromDaily > 0) {
+    totalRevenue -= drawnFromDaily;
+    if (cashMethod) {
+      const idx = byMethod.findIndex(m => m.methodCode === cashMethod.code);
+      if (idx >= 0) byMethod[idx] = { ...byMethod[idx], amount: byMethod[idx].amount - drawnFromDaily };
+      else byMethod.push({ methodCode: cashMethod.code, methodName: cashMethod.name, count: 0, amount: -drawnFromDaily });
+    }
+  }
   byMethod.sort((a, b) => b.amount - a.amount);
-  return { date, totalRevenue: daySales.reduce((sum, s) => sum + netSaleTotal(s), 0), transactionCount: countDistinctTransactions(daySales), byMethod };
+  return { date, totalRevenue, transactionCount: countDistinctTransactions(daySales), byMethod };
 }
 
 export type MethodRecapRow = DailyMethodRecap & { percent: number };

@@ -12,6 +12,10 @@ final class DailyReportController
     // by method). Sales that predate this feature (no app_sale_payments row) are bucketed as
     // "Lainnya / tidak tercatat" so byMethod always reconciles with the day's raw sales sum —
     // totalRevenue is the actual sum of the day's sales, not just the recorded method rows.
+    // A kas keluar (Keuangan) entry funded "dari transaksi harian" is also netted out of both
+    // totalRevenue and the cash-type method's bucket, since that cash physically left today's
+    // takings — see the funding-source block below. "Dari kas pinjaman" entries are NOT netted
+    // here (they're drawn from the overall pool, not today's own sales).
     public function __invoke(Request $request): JsonResponse
     {
         $data = $request->validate(['date' => 'nullable|date_format:Y-m-d']);
@@ -67,6 +71,27 @@ final class DailyReportController
                 'count' => $untracked->count(),
                 'amount' => (float) $untracked->sum($netTotal),
             ];
+        }
+
+        // Kas keluar entries whose sumber dana is "dari transaksi harian" are physically pulled
+        // out of that day's own cash takings - net them out of the day's revenue and its cash
+        // bucket, or Rekap harian keeps showing the full sale total as if nothing left the till.
+        $cashTable = config('sid.cash_ledger.table'); $cc = config('sid.cash_ledger.columns');
+        $drawnFromDaily = (float) DB::table($cashTable)
+            ->join('app_cash_entry_funding', "$cashTable.{$cc['id']}", '=', 'app_cash_entry_funding.ledger_id')
+            ->where("$cashTable.{$cc['date']}", $date)
+            ->where("$cashTable.{$cc['direction']}", 'out')
+            ->where('app_cash_entry_funding.funding_source', 'daily')
+            ->sum("$cashTable.{$cc['amount']}");
+        if ($drawnFromDaily > 0) {
+            $totalRevenue -= $drawnFromDaily;
+            $cashMethod = DB::table('app_payment_methods')->where('type', 'cash')->first();
+            if ($cashMethod) {
+                $idx = null;
+                foreach ($byMethod as $i => $m) { if ($m['methodCode'] === $cashMethod->code) { $idx = $i; break; } }
+                if ($idx !== null) $byMethod[$idx]['amount'] -= $drawnFromDaily;
+                else $byMethod[] = ['methodCode' => $cashMethod->code, 'methodName' => $cashMethod->name, 'count' => 0, 'amount' => -$drawnFromDaily];
+            }
         }
 
         // Largest contribution first.
