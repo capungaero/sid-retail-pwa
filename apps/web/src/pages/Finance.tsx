@@ -3,7 +3,12 @@ import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
 import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
 import { money } from '../lib/money';
-import type { CashDirection, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable } from '../types';
+import type { CashDirection, CashFundingSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable } from '../types';
+
+const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint: string }[] = [
+  { value: 'daily', label: 'Dari transaksi harian', hint: 'Diambil langsung dari hasil jualan hari ini' },
+  { value: 'loan', label: 'Dari kas pinjaman', hint: 'Diambil dari kas penjualan keseluruhan, dikembalikan nanti' },
+];
 
 const TABS = [
   { key: 'cash', label: 'Kas masuk & keluar' },
@@ -60,7 +65,7 @@ function CashTab() {
     <section className="panel flush">
       <div className="table-tools"><h2>Buku kas</h2><span className="status success">Saldo saat ini: {money.format(balance)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Catat transaksi kas</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
     </section>
     {adding && <CashEntryModal onClose={() => setAdding(false)} onSaved={entry => { setEntries(current => [...current, entry]); setAdding(false); }} />}
   </>;
@@ -68,6 +73,7 @@ function CashTab() {
 
 function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (entry: CashLedgerEntry) => void }) {
   const [direction, setDirection] = useState<CashDirection>('in'); const [amount, setAmount] = useState(0); const [category, setCategory] = useState(CASH_CATEGORIES[0]); const [note, setNote] = useState('');
+  const [fundingSource, setFundingSource] = useState<CashFundingSource | null>(null);
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
   const modalRef = useModalTrap(onClose);
   // Generated once per modal open and reused across retries of the same submit attempt (e.g. a
@@ -75,8 +81,9 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
   const idempotencyKey = useRef(crypto.randomUUID()).current;
   async function submit() {
     if (amount <= 0) return setError('Jumlah harus lebih dari 0.');
+    if (direction === 'out' && !fundingSource) return setError('Pilih sumber dana.');
     setSaving(true); setError('');
-    try { onSaved(await addCashEntry({ direction, amount, category, note: note.trim() || undefined }, idempotencyKey)); }
+    try { onSaved(await addCashEntry({ direction, amount, category, note: note.trim() || undefined, fundingSource: direction === 'out' ? fundingSource ?? undefined : undefined }, idempotencyKey)); }
     catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan transaksi kas'); setSaving(false); }
   }
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="cash-title">
@@ -86,6 +93,7 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
       <button type="button" role="tab" aria-selected={direction === 'out'} className={`tab-button ${direction === 'out' ? 'active' : ''}`} onClick={() => setDirection('out')}>Kas keluar</button>
     </div>
     <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{CASH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+    {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => setFundingSource(e.target.value as CashFundingSource)}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>{fundingSource && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}</label>}
     <label>Jumlah<input type="number" min="0" value={amount} onChange={e => setAmount(Number(e.target.value))} onFocus={e => e.currentTarget.select()} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
     {error && <div className="notice error" role="alert">{error}</div>}

@@ -47,7 +47,11 @@ export type StockMovementType = 'purchase-receipt' | 'purchase-return' | 'sales-
 export type StockMovement = { id: string; productId: string; productName: string; type: StockMovementType; qty: number; reference: string; note?: string; createdAt: string };
 
 export type CashDirection = 'in' | 'out';
-export type CashLedgerEntry = { id: string; direction: CashDirection; amount: number; category: string; note?: string; balanceAfter: number; createdAt: string };
+// Only meaningful for direction 'out': where the cash physically came from. 'daily' = taken
+// straight from that day's own sales takings. 'loan' = drawn against the overall sales cash
+// pool, to be paid back later (tracked here as a note, not auto-reconciled against anything).
+export type CashFundingSource = 'daily' | 'loan';
+export type CashLedgerEntry = { id: string; direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; balanceAfter: number; createdAt: string };
 
 export type PayablePayment = { id: string; amount: number; note?: string; createdAt: string };
 export type Payable = { id: string; supplierId: string; supplierName: string; reference: string; amount: number; payments: PayablePayment[]; createdAt: string; dueAt?: string };

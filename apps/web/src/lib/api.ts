@@ -5,7 +5,7 @@ import { computeAttendanceStatus, findScheduledShift } from './hrd';
 import { buildDailyRecap } from './reports';
 import { validateStoreProfile } from './settings';
 import { openReceiptPreviewPopup } from './print';
-import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, DailyRecap, Employee, ExchangePayload, ExchangeResult, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
+import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashFundingSource, CashLedgerEntry, Customer, DailyRecap, Employee, ExchangePayload, ExchangeResult, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
 
 const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') as string | undefined;
 export const isDemoMode = !baseUrl;
@@ -344,10 +344,10 @@ export async function listCashEntries(): Promise<CashLedgerEntry[]> {
   return request('/finance/cash-entries');
 }
 
-export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
+export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
   if (!baseUrl) {
     const previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
-    const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
+    const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
     demoCashEntries.push(entry);
     return entry;
   }
