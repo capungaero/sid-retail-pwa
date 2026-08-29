@@ -99,13 +99,8 @@ final class SaleController
         $method = DB::table('app_payment_methods')->where('code', $data['paymentMethod'])->where('active', true)->first();
         if (!$method) return response()->json(['message' => 'Metode pembayaran tidak valid atau nonaktif.'], 422);
 
-        // Two ways into the debt path: the "Cashbon" method type is a debt sale by definition, or
-        // a cashier can underpay a Tunai sale and explicitly flag it (isDebt) — both end up in the
-        // same isDebt-gated branch below. Any other combination (isDebt sent for a non-cash,
-        // non-debt method) is rejected: piutang only makes sense where the app itself decides how
-        // much was actually collected.
-        $isDebt = ($method->type === 'debt') || (bool) ($data['isDebt'] ?? false);
-        if ($isDebt && !in_array($method->type, ['cash', 'debt'], true)) return response()->json(['message' => 'Piutang cuma berlaku untuk pembayaran tunai atau cashbon.'], 422);
+        $isDebt = (bool) ($data['isDebt'] ?? false);
+        if ($isDebt && $method->type !== 'cash') return response()->json(['message' => 'Piutang cuma berlaku untuk pembayaran tunai.'], 422);
 
         $idempotencyKey = $data['idempotencyKey'];
         $existing = DB::table('app_idempotency_keys')->where('idempotency_key', $idempotencyKey)->first();
@@ -116,13 +111,13 @@ final class SaleController
         $total = $subtotal - $discountTotal;
 
         // paid/change are decided SERVER-SIDE by method type — never trusted from the client.
-        // Cash: cashier tenders >= total, change = tendered - total. Debt sales (Cashbon, or a
-        // Tunai sale explicitly flagged $isDebt) are the exception — any amount from 0 up to
-        // total is accepted, the gap becomes a piutang instead of being rejected as underpaid.
-        // Non-cash (QRIS/transfer/card): the transaction is settled for the exact total by the
-        // payment rail, so paid = total and change = 0 regardless of whatever `paid` the client
-        // sent — otherwise a client could record a phantom change on a non-cash sale.
-        $isCash = ($method->type === 'cash' || $method->type === 'debt');
+        // Cash: cashier tenders >= total, change = tendered - total. Debt sales (Tunai explicitly
+        // flagged $isDebt) are the exception — any amount from 0 up to total is accepted, the gap
+        // becomes a piutang instead of being rejected as underpaid. Non-cash (QRIS/transfer/card):
+        // the transaction is settled for the exact total by the payment rail, so paid = total and
+        // change = 0 regardless of whatever `paid` the client sent — otherwise a client could
+        // record a phantom change on a non-cash sale.
+        $isCash = ($method->type === 'cash');
         if ($isCash) {
             if (!$isDebt && $data['paid'] < $total) {
                 return response()->json(['message' => 'Jumlah bayar kurang dari total belanja.'], 422);

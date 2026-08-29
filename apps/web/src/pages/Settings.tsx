@@ -157,8 +157,8 @@ function UserModal({ onClose, onSaved }: { onClose: () => void; onSaved: (u: Use
   </section></div>;
 }
 
-const METHOD_TYPE_LABEL: Record<PaymentMethodType, string> = { cash: 'Tunai', credit: 'Kartu Kredit', transfer: 'Transfer', qris: 'QRIS', debt: 'Cashbon (hutang)', other: 'Lainnya' };
-const METHOD_TYPES: PaymentMethodType[] = ['cash', 'credit', 'transfer', 'qris', 'debt', 'other'];
+const METHOD_TYPE_LABEL: Record<PaymentMethodType, string> = { cash: 'Tunai', credit: 'Kartu Kredit', transfer: 'Transfer', qris: 'QRIS', other: 'Lainnya' };
+const METHOD_TYPES: PaymentMethodType[] = ['cash', 'credit', 'transfer', 'qris', 'other'];
 
 function PaymentMethodsTab() {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
