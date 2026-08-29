@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArchiveRestore, Banknote, Check, ChevronDown, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, X } from 'lucide-react';
-import { completeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCustomers, listProducts, listSales } from '../lib/api';
+import { ArchiveRestore, ArrowLeftRight, Banknote, Check, ChevronDown, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, X } from 'lucide-react';
+import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCustomers, listProducts, listSales } from '../lib/api';
 import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import type { CartLine, Customer, HeldSale, PaperWidth, PaymentMethod, Product, SaleRecord, StoreProfile, Unit } from '../types';
+import type { CartLine, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
 const general: Customer = { id: 'general', code: 'UMUM', name: 'Pelanggan Umum', tier: 'retail' };
@@ -147,22 +147,81 @@ function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer
     {method&&!isCash&&<label>Nomor referensi (opsional)<input className="money-input" type="text" maxLength={64} value={reference} onChange={e=>setReference(e.target.value)} placeholder="No. QRIS / transfer / approval" /></label>}
     {error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={submitDisabled}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }
 
-// View-only for now: editing a saved sale (adjusting lines/qty/price after the fact, with the
-// stock/ledger implications that implies) needs its own carefully-designed, admin-gated backend
-// endpoint - deliberately out of scope here. This tab covers lookup, detail, and reprint only.
-function SaleDetailModal({ sale, onClose, onReprint, reprinting }: { sale: SaleRecord; onClose: () => void; onReprint: () => void; reprinting: boolean }) {
+// Editing a saved sale's lines directly (adjusting qty/price after the fact) still needs its own
+// carefully-designed, admin-gated endpoint - deliberately out of scope. "Tukar barang" instead
+// covers the customer-already-paid-but-changed-their-mind case without touching the original sale:
+// it restocks the old line and books the replacement as a brand new, linked transaction.
+function SaleDetailModal({ sale, onClose, onReprint, onExchange, reprinting }: { sale: SaleRecord; onClose: () => void; onReprint: () => void; onExchange: (line: SaleLine) => void; reprinting: boolean }) {
   return <Modal title={`Detail ${sale.invoice}`} onClose={onClose}>
     <p className="muted" style={{ marginTop: -8 }}>{new Date(sale.createdAt).toLocaleString('id-ID')} · {sale.customerName || 'Tanpa nama'}</p>
-    <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Satuan</th><th className="numeric">Qty</th><th className="numeric">Harga</th><th className="numeric">Subtotal</th></tr></thead><tbody>
-      {sale.lines.map((l,i) => <tr key={i}><td>{l.productName}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td></tr>)}
+    <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Satuan</th><th className="numeric">Qty</th><th className="numeric">Harga</th><th className="numeric">Subtotal</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
+      {sale.lines.map((l,i) => <tr key={i}><td>{l.productName}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td><td><button className="button ghost" onClick={() => onExchange(l)}><ArrowLeftRight /> Tukar</button></td></tr>)}
     </tbody></table></div>
     <div className="summary"><div><span>Total</span><strong>{money.format(sale.total)}</strong></div><div><span>Bayar</span><strong>{money.format(sale.paid)}</strong></div><div className="grand-total"><span>Kembalian</span><strong>{money.format(sale.change)}</strong></div></div>
     <div className="modal-actions"><button className="button secondary" onClick={onClose}>Tutup</button><button className="button primary" data-autofocus="true" onClick={onReprint} disabled={reprinting}><Printer /> {reprinting ? 'Menyiapkan…' : 'Cetak ulang'}</button></div>
   </Modal>;
 }
+// "Tukar barang" - customer already paid, sale is already in Riwayat hari ini, but doesn't want
+// the item anymore and wants a different one instead. Restocks the old line automatically, lets
+// the cashier search for the replacement, and computes kurang bayar / kembalian from the price
+// difference. The original transaction is never touched; this books a new linked sale.
+function ExchangeDialog({ invoice, line, onClose, onDone }: { invoice: string; line: SaleLine; onClose: () => void; onDone: (result: { newInvoice: string; diff: number }) => void }) {
+  const [query, setQuery] = useState(''); const [results, setResults] = useState<Product[]>([]); const [searchLoading, setSearchLoading] = useState(false);
+  const [product, setProduct] = useState<Product | null>(null); const [unit, setUnit] = useState<Unit | null>(null); const [qty, setQty] = useState(line.qty);
+  const [reason, setReason] = useState('');
+  const [methods, setMethods] = useState<PaymentMethod[]>([]); const [method, setMethod] = useState<PaymentMethod | null>(null); const [methodsLoading, setMethodsLoading] = useState(true);
+  const [reference, setReference] = useState(''); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
+  const idempotencyKey = useRef(crypto.randomUUID());
+  useEffect(() => { let active = true; setMethodsLoading(true); getPaymentMethods().then(list => { if (active) { setMethods(list); setMethod(list[0] ?? null); } }).finally(() => { if (active) setMethodsLoading(false); }); return () => { active = false; }; }, []);
+  useEffect(() => { let active = true; setSearchLoading(true); const timer = setTimeout(() => listProducts(query).then(data => { if (active) setResults(data.filter(p => p.stock > 0)); }).finally(() => { if (active) setSearchLoading(false); }), 100); return () => { active = false; clearTimeout(timer); }; }, [query]);
+  function pick(p: Product) { setProduct(p); setUnit(p.units[0]); setQty(1); setQuery(''); }
+  const oldLineValue = (line.qty * line.price - line.discount) / line.qty * qty;
+  const newLineValue = unit ? unit.price * qty : 0;
+  const diff = Math.round((newLineValue - oldLineValue) * 100) / 100;
+  const isCash = method?.type === 'cash';
+  async function submit() {
+    if (!product || !unit) return setError('Pilih barang pengganti.');
+    if (!method) return setError('Pilih metode pembayaran.');
+    if (saving) return;
+    setSaving(true); setError('');
+    try {
+      const payload: ExchangePayload = {
+        oldProductId: line.productId, oldUnit: line.unit, oldQty: qty,
+        newProductId: product.id, newUnit: unit.name, newQty: qty, newPrice: unit.price,
+        reason: reason.trim() || undefined, paymentMethod: method.code, paymentRef: !isCash && reference.trim() ? reference.trim() : undefined,
+        idempotencyKey: idempotencyKey.current,
+      };
+      const result = await exchangeSale(invoice, payload);
+      onDone({ newInvoice: result.newInvoice, diff: result.diff });
+    } catch (e) { setError(e instanceof Error ? e.message : 'Tukar barang gagal disimpan'); setSaving(false); }
+  }
+  return <Modal title={`Tukar barang · ${line.productName}`} onClose={onClose}>
+    <p className="muted" style={{ marginTop: -8 }}>Barang lama dikembalikan ke stok otomatis. Pilih penggantinya di bawah.</p>
+    <label>Jumlah ditukar<input className="money-input" type="number" min={1} max={line.qty} value={qty} onChange={e => setQty(Math.max(1, Math.min(line.qty, Number(e.target.value))))} /></label>
+    {!product ? <>
+      <label className="search-box"><Search /><span className="sr-only">Cari barang pengganti</span><input data-autofocus="true" value={query} onChange={e => setQuery(e.target.value)} placeholder="Cari barang pengganti…" /></label>
+      {query && <div className="search-results" role="listbox" aria-label="Hasil pencarian">{searchLoading ? <div className="empty-compact" role="status">Mencari barang…</div> : <>{results.slice(0, 6).map(p => <button key={p.id} role="option" aria-selected="false" onClick={() => pick(p)}><div><strong>{p.name}</strong><span>{p.code} · {p.barcode}</span></div><div><strong>{money.format(p.units[0].price)}</strong><span>Stok {number.format(p.stock)}</span></div></button>)}{!results.length && <div className="empty-compact">Barang tidak ditemukan</div>}</>}</div>}
+    </> : <div className="option-list"><button onClick={() => setProduct(null)}><span><strong>{product.name}</strong><small>{product.code}</small></span><X /></button></div>}
+    {product && unit && <>
+      <label>Satuan pengganti<select value={unit.name} onChange={e => setUnit(product.units.find(u => u.name === e.target.value) ?? unit)}>{product.units.map(u => <option key={u.name} value={u.name}>{u.name} · {money.format(u.price)}</option>)}</select></label>
+      <div className="summary">
+        <div><span>Nilai barang lama</span><strong>{money.format(oldLineValue)}</strong></div>
+        <div><span>Nilai barang baru</span><strong>{money.format(newLineValue)}</strong></div>
+        <div className="grand-total"><span>{diff > 0 ? 'Kurang bayar' : 'Kembalian'}</span><strong>{money.format(Math.abs(diff))}</strong></div>
+      </div>
+      <label>Metode pembayaran</label>
+      {methodsLoading ? <div className="empty-compact" role="status">Memuat metode…</div> : <div className="pay-method-picker" role="group" aria-label="Metode pembayaran">{methods.map(m => <button key={m.id} type="button" className={method?.code === m.code ? 'active' : ''} aria-pressed={method?.code === m.code} onClick={() => setMethod(m)}>{m.name}</button>)}</div>}
+      {method && !isCash && <label>Nomor referensi (opsional)<input className="money-input" type="text" maxLength={64} value={reference} onChange={e => setReference(e.target.value)} /></label>}
+      <label>Alasan (opsional)<input className="money-input" type="text" maxLength={100} value={reason} onChange={e => setReason(e.target.value)} placeholder="Mis. salah rasa, tidak jadi beli" /></label>
+    </>}
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={saving || !product || !method}>{saving ? 'Menyimpan…' : <><ArrowLeftRight /> Simpan tukar</>}</button></div>
+  </Modal>;
+}
 function HistoryTab() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null); const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const [exchange, setExchange] = useState<{ invoice: string; line: SaleLine } | null>(null);
   const [cashierQuery, setCashierQuery] = useState(''); const [methodFilter, setMethodFilter] = useState(''); const [printingReport, setPrintingReport] = useState(false);
   const { previewAndPrint, modal } = useReceiptPreview();
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false)); };
@@ -228,7 +287,8 @@ function HistoryTab() {
         <td><div className="row-actions"><button className="button ghost" onClick={() => setDetail(s)}>Detail</button><button className="button secondary" onClick={() => reprint(s)} disabled={reprintingId === s.id}><Printer /> {reprintingId === s.id ? '…' : 'Cetak ulang'}</button></div></td>
       </tr>)}
     </tbody></table></div>}
-    {detail && <SaleDetailModal sale={detail} reprinting={reprintingId === detail.id} onClose={() => setDetail(null)} onReprint={() => reprint(detail)} />}
+    {detail && <SaleDetailModal sale={detail} reprinting={reprintingId === detail.id} onClose={() => setDetail(null)} onReprint={() => reprint(detail)} onExchange={line => { setDetail(null); setExchange({ invoice: detail.invoice, line }); }} />}
+    {exchange && <ExchangeDialog invoice={exchange.invoice} line={exchange.line} onClose={() => setExchange(null)} onDone={result => { setExchange(null); load(); alert(`Tukar barang berhasil. Faktur baru ${result.newInvoice}. ${result.diff > 0 ? `Kurang bayar ${money.format(result.diff)}.` : result.diff < 0 ? `Kembalian ${money.format(-result.diff)}.` : ''}`); }} />}
     {modal}
   </section>;
 }

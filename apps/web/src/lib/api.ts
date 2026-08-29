@@ -5,7 +5,7 @@ import { computeAttendanceStatus, findScheduledShift } from './hrd';
 import { buildDailyRecap } from './reports';
 import { validateStoreProfile } from './settings';
 import { openReceiptPreviewPopup } from './print';
-import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, DailyRecap, Employee, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
+import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashLedgerEntry, Customer, DailyRecap, Employee, ExchangePayload, ExchangeResult, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
 
 const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') as string | undefined;
 export const isDemoMode = !baseUrl;
@@ -150,6 +150,43 @@ export async function completeSale(payload: PaymentPayload): Promise<{ invoice: 
     return { invoice, total };
   }
   return request('/sales', { method: 'POST', headers: { 'Idempotency-Key': payload.idempotencyKey }, body: JSON.stringify(payload) });
+}
+
+export async function exchangeSale(oldInvoice: string, payload: ExchangePayload): Promise<ExchangeResult> {
+  if (!baseUrl) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const oldSale = demoSalesLog.find(s => s.invoice === oldInvoice);
+    if (!oldSale) throw new Error('Transaksi asli tidak ditemukan.');
+    const oldLine = oldSale.lines.find(l => l.productId === payload.oldProductId && l.unit === payload.oldUnit);
+    if (!oldLine) throw new Error('Barang tidak ditemukan di transaksi ini.');
+    if (payload.oldQty > oldLine.qty) throw new Error('Jumlah tukar melebihi jumlah yang dibeli.');
+    const oldUnitNet = (oldLine.qty * oldLine.price - oldLine.discount) / oldLine.qty;
+    const oldLineValue = Math.round(oldUnitNet * payload.oldQty * 100) / 100;
+
+    const oldProduct = demoProducts.find(p => p.id === payload.oldProductId);
+    if (oldProduct) oldProduct.stock += payload.oldQty;
+    const newProduct = demoProducts.find(p => p.id === payload.newProductId);
+    if (!newProduct) throw new Error('Barang pengganti tidak ditemukan.');
+    if (newProduct.stock < payload.newQty) throw new Error(`Stok ${newProduct.name} tidak cukup.`);
+    newProduct.stock -= payload.newQty;
+
+    const newDiscount = payload.newDiscount ?? 0;
+    const newLineValue = Math.round((payload.newQty * payload.newPrice - newDiscount) * 100) / 100;
+    const diff = Math.round((newLineValue - oldLineValue) * 100) / 100;
+    const method = demoPaymentMethods.find(m => m.code === payload.paymentMethod);
+    const newInvoice = `DEMO-${Date.now().toString().slice(-8)}`;
+
+    demoSalePayments.push({ saleId: newInvoice, methodCode: method?.code ?? payload.paymentMethod, methodName: method?.name ?? payload.paymentMethod, amount: Math.max(0, diff), reference: payload.paymentRef, createdAt: new Date().toISOString() });
+    demoSalesLog.unshift({
+      id: crypto.randomUUID(), invoice: newInvoice, customerId: oldSale.customerId, customerName: oldSale.customerName,
+      lines: [{ productId: payload.newProductId, productName: newProduct.name, unit: payload.newUnit, qty: payload.newQty, price: payload.newPrice, discount: newDiscount }],
+      total: newLineValue, paid: newLineValue, change: 0, createdAt: new Date().toISOString(),
+    });
+    demoStockMovements.push({ id: crypto.randomUUID(), productId: payload.oldProductId, productName: oldProduct?.name ?? payload.oldProductId, type: 'sales-return', qty: payload.oldQty, reference: oldInvoice, note: payload.reason || `Tukar ke ${newProduct.name}`, createdAt: new Date().toISOString() });
+
+    return { newInvoice, oldInvoice, total: newLineValue, diff };
+  }
+  return request(`/sales/${oldInvoice}/exchange`, { method: 'POST', headers: { 'Idempotency-Key': payload.idempotencyKey }, body: JSON.stringify(payload) });
 }
 
 export async function listSales(): Promise<SaleRecord[]> {

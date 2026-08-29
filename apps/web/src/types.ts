@@ -17,6 +17,15 @@ export type CartLine = { product: Product; unit: Unit; qty: number; discount: nu
 export type HeldSale = { id: string; reference: string; customer: Customer; lines: CartLine[]; heldAt: string };
 export type PaymentPayload = { customerId: string; lines: { productId: string; unit: string; qty: number; price: number; discount: number }[]; paid: number; idempotencyKey: string; paymentMethod: string; paymentRef?: string };
 
+// "Tukar barang" — customer already paid, doesn't want the item, swaps it for a different one.
+// The original sale is untouched; this creates a brand new sale for the replacement item.
+export type ExchangePayload = {
+  oldProductId: string; oldUnit: string; oldQty: number;
+  newProductId: string; newUnit: string; newQty: number; newPrice: number; newDiscount?: number;
+  reason?: string; paymentMethod: string; paymentRef?: string; idempotencyKey: string;
+};
+export type ExchangeResult = { newInvoice: string; oldInvoice: string; total: number; diff: number };
+
 export type PaymentMethodType = 'cash' | 'credit' | 'transfer' | 'qris' | 'other';
 export type PaymentMethod = { id: string; code: string; name: string; type: PaymentMethodType; legacyKasCode?: string | null; active: boolean; sortOrder: number };
 

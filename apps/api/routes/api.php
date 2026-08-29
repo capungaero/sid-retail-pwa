@@ -17,6 +17,7 @@ use App\Http\Controllers\ReceivableController;
 use App\Http\Controllers\ReturnController;
 use App\Http\Controllers\RolePermissionController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\SaleExchangeController;
 use App\Http\Controllers\SettingsBackupController;
 use App\Http\Controllers\ShiftAssignmentController;
 use App\Http\Controllers\ShiftController;
@@ -37,6 +38,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/customers', CustomerController::class)->middleware('ability:pos:read');
     Route::post('/sales', SaleController::class)->middleware('ability:pos:write');
     Route::get('/sales', [SaleController::class, 'index'])->middleware('ability:pos:read');
+    Route::post('/sales/{invoice}/exchange', SaleExchangeController::class)->middleware('ability:pos:write');
     Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->middleware('ability:pos:read');
     Route::get('/reports/daily', DailyReportController::class)->middleware('ability:pos:read');
     Route::get('/hrd/employees', EmployeeController::class)->middleware('ability:hrd:read');
