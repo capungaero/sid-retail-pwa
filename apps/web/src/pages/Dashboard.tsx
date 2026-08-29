@@ -45,7 +45,12 @@ export function Dashboard() {
   const todayKey = new Date().toISOString().slice(0, 10);
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey), [sales, todayKey]);
   const summary = useMemo(() => summarizeSales(todaySales), [todaySales]);
-  const avgTicket = summary.count ? summary.revenue / summary.count : 0;
+  // recap (Laporan > Rekap harian's own math) also nets out same-day kas keluar entries funded
+  // "dari transaksi harian" - prefer it here so this card and Rekap harian always agree. Falls
+  // back to the unnetted summary only while recap hasn't loaded yet (or failed to).
+  const todayRevenue = recap?.totalRevenue ?? summary.revenue;
+  const todayTransactionCount = recap?.transactionCount ?? summary.count;
+  const avgTicket = todayTransactionCount ? todayRevenue / todayTransactionCount : 0;
   const low = useMemo(() => lowStockProducts(products), [products]);
   const negativeStock = products.filter(p => p.stock < 0).length;
   const pendingOrders = orders.filter(o => o.status !== 'received');
@@ -99,7 +104,7 @@ export function Dashboard() {
 
   return <div className="page"><div className="page-heading"><div><p className="eyebrow">{todayLabel}</p><h1>Ringkasan operasional</h1><p>Pantau aktivitas toko hari ini.</p></div><Link className="button primary" to="/pos">Buka kasir <ArrowRight /></Link></div>
     <section className="metric-grid" aria-label="Metrik hari ini">
-      <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Penjualan hari ini</span><strong>{loading ? '—' : money.format(summary.revenue)}</strong><small>{loading ? 'Memuat…' : `${number.format(summary.count)} transaksi`}</small></div></article>
+      <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Penjualan hari ini</span><strong>{loading ? '—' : money.format(todayRevenue)}</strong><small>{loading ? 'Memuat…' : `${number.format(todayTransactionCount)} transaksi`}</small></div></article>
       <article className="metric"><span className="metric-icon green"><ReceiptText /></span><div><span>Rata-rata transaksi</span><strong>{loading ? '—' : money.format(avgTicket)}</strong><small>{number.format(summary.qtySold)} item terjual</small></div></article>
       <article className="metric"><span className="metric-icon amber"><TriangleAlert /></span><div><span>Stok perlu perhatian</span><strong>{loading ? '—' : number.format(low.length)} barang</strong><small>{number.format(negativeStock)} stok negatif</small></div></article>
       <article className="metric"><span className="metric-icon purple"><PackageCheck /></span><div><span>Pembelian tertunda</span><strong>{loading ? '—' : number.format(pendingOrders.length)} PO</strong><small>Belum diterima penuh</small></div></article>
