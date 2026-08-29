@@ -86,7 +86,7 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
       <button type="button" role="tab" aria-selected={direction === 'out'} className={`tab-button ${direction === 'out' ? 'active' : ''}`} onClick={() => setDirection('out')}>Kas keluar</button>
     </div>
     <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{CASH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
-    <label>Jumlah<input type="number" min="0" value={amount} onChange={e => setAmount(Number(e.target.value))} /></label>
+    <label>Jumlah<input type="number" min="0" value={amount} onChange={e => setAmount(Number(e.target.value))} onFocus={e => e.currentTarget.select()} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</button></div>
