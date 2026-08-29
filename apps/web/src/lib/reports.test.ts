@@ -16,6 +16,12 @@ describe('withinRange', () => {
   it('excludes items after the end bound', () => {
     expect(withinRange(createdAt, { end: '2026-08-12' })).toBe(false);
   });
+  it('includes an early-morning sale on the start-bound day itself (no UTC-vs-local drift)', () => {
+    // A bare `new Date('yyyy-mm-dd')` parses as UTC midnight; createdAt here has no timezone
+    // suffix and so parses as local time. Filtering that same day with itself as both bounds
+    // must not silently drop hours before the local UTC offset catches up.
+    expect(withinRange('2026-08-28T00:04:20.000', { start: '2026-08-28', end: '2026-08-28' })).toBe(true);
+  });
 });
 
 describe('filterByRange', () => {

@@ -30,13 +30,16 @@ export function Reports() {
   </div>;
 }
 
-function DateRangeFilter({ start, end, setStart, setEnd, onReset }: { start: string; end: string; setStart: (v: string) => void; setEnd: (v: string) => void; onReset: () => void }) {
+function DateRangeFilter({ start, end, setStart, setEnd, onReset, cashier, setCashier, cashierOptions }: { start: string; end: string; setStart: (v: string) => void; setEnd: (v: string) => void; onReset: () => void; cashier?: string; setCashier?: (v: string) => void; cashierOptions?: string[] }) {
   return <section className="panel">
     <div className="panel-heading"><div><p className="eyebrow">Filter periode</p><h2>Rentang tanggal</h2></div></div>
     <div className="form-grid">
       <label>Dari<input type="date" value={start} onChange={e => setStart(e.target.value)} /></label>
       <label>Sampai<input type="date" value={end} onChange={e => setEnd(e.target.value)} /></label>
-      <div className="line-add-row"><button type="button" className="button secondary" onClick={onReset}>Reset filter</button></div>
+      <div className="line-add-row">
+        {setCashier && <><label className="sr-only" htmlFor="report-cashier-filter">Cari kasir</label><select id="report-cashier-filter" value={cashier} onChange={e => setCashier(e.target.value)}><option value="">Semua kasir</option>{cashierOptions?.map(c => <option key={c} value={c}>{c}</option>)}</select></>}
+        <button type="button" className="button secondary" onClick={onReset}>Reset filter</button>
+      </div>
     </div>
   </section>;
 }
@@ -77,17 +80,20 @@ function SalesPurchaseTab() {
   const [error, setError] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
+  const [cashier, setCashier] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null);
   const load = () => { setLoading(true); setError(''); Promise.all([listSales(), listPurchaseOrders(), listSuppliers()]).then(([s, p, sup]) => { setSales(s); setOrders(p); setSuppliers(sup); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const range = useMemo(() => ({ start: start || undefined, end: end || undefined }), [start, end]);
-  const filteredSales = useMemo(() => filterByRange(sales, range), [sales, range]);
+  const dateFilteredSales = useMemo(() => filterByRange(sales, range), [sales, range]);
+  const cashierOptions = useMemo(() => Array.from(new Set(dateFilteredSales.map(s => s.cashierName).filter((v): v is string => Boolean(v)))).sort(), [dateFilteredSales]);
+  const filteredSales = useMemo(() => cashier ? dateFilteredSales.filter(s => s.cashierName === cashier) : dateFilteredSales, [dateFilteredSales, cashier]);
   const filteredOrders = useMemo(() => filterByRange(orders, range), [orders, range]);
   const salesSummary = useMemo(() => summarizeSales(filteredSales), [filteredSales]);
   const purchaseSummary = useMemo(() => summarizePurchases(filteredOrders), [filteredOrders]);
   const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name ?? id;
   return <>
-    <DateRangeFilter start={start} end={end} setStart={setStart} setEnd={setEnd} onReset={() => { setStart(''); setEnd(''); }} />
+    <DateRangeFilter start={start} end={end} setStart={setStart} setEnd={setEnd} onReset={() => { setStart(''); setEnd(''); setCashier(''); }} cashier={cashier} setCashier={setCashier} cashierOptions={cashierOptions} />
     {error && <div className="notice error" role="alert">{error}</div>}
     <section className="metric-grid" aria-label="Ringkasan penjualan & pembelian">
       <article className="metric"><span className="metric-icon blue"><ReceiptText /></span><div><span>Penjualan</span><strong>{money.format(salesSummary.revenue)}</strong><small>{salesSummary.count} transaksi · {number.format(salesSummary.qtySold)} item terjual</small></div></article>

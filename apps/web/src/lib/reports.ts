@@ -4,10 +4,14 @@ import type { CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, P
 export type DateRange = { start?: string; end?: string };
 
 // Inclusive date-range check over an ISO timestamp. An unset bound is treated as unbounded.
-// `end` is a plain date (yyyy-mm-dd from a <input type="date">), so it is extended to end-of-day.
+// start/end are plain dates (yyyy-mm-dd from a <input type="date">), so both are given an
+// explicit time-of-day and parsed as local time, matching how a bare `createdAt` (no timezone
+// suffix) is parsed. A bare `new Date('yyyy-mm-dd')` parses as UTC midnight instead — mixing
+// that with a local-time createdAt silently dropped the first few hours of the start date
+// (any WIB-morning sale before the UTC offset caught up), which read as missing transactions.
 export function withinRange(createdAt: string, range: DateRange): boolean {
   const time = new Date(createdAt).getTime();
-  if (range.start && time < new Date(range.start).getTime()) return false;
+  if (range.start && time < new Date(`${range.start}T00:00:00.000`).getTime()) return false;
   if (range.end && time > new Date(`${range.end}T23:59:59.999`).getTime()) return false;
   return true;
 }
