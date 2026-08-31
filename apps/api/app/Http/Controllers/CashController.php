@@ -15,7 +15,7 @@ final class CashController
         $funding = DB::table('app_cash_entry_funding')->get()->keyBy('ledger_id');
         return response()->json(array_map(function ($e) use ($funding) {
             $f = $funding->get($e['id']);
-            return $e + ['fundingSource' => $f?->funding_source, 'fundingCashierName' => $f?->cashier_name];
+            return $e + ['fundingSource' => $f?->funding_source, 'fundingCashierName' => $f?->cashier_name, 'cashSource' => $f?->cash_source];
         }, $entries));
     }
 
@@ -33,6 +33,8 @@ final class CashController
             // Only a 'daily' draw is attributed to one cashier's own takings - a 'loan' draw
             // comes out of the overall pool, not any single cashier's day.
             'fundingCashierName' => 'required_if:fundingSource,daily|nullable|string|max:100',
+            // Which cash pool a "kas masuk" entry landed in.
+            'cashSource' => 'required_if:direction,in|nullable|in:petty,in_transit,bank',
         ]);
         try {
             $entry = $repo->create($data['direction'], (float) $data['amount'], $data['category'], $data['note'] ?? null, $request->user()?->getKey(), $idempotencyKey);
@@ -44,6 +46,11 @@ final class CashController
                 ]);
                 $entry['fundingSource'] = $data['fundingSource'];
                 $entry['fundingCashierName'] = $data['fundingSource'] === 'daily' ? $data['fundingCashierName'] : null;
+            } else {
+                DB::table('app_cash_entry_funding')->insert([
+                    'ledger_id' => $entry['id'], 'cash_source' => $data['cashSource'], 'created_at' => now(),
+                ]);
+                $entry['cashSource'] = $data['cashSource'];
             }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000' && ($winner = Idempotency::find($idempotencyKey))) return response()->json($winner, 201);
