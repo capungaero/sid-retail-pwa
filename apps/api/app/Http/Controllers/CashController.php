@@ -60,14 +60,17 @@ final class CashController
                     // A "daily" draw is real cash pulled from that cashier's own till, but it's
                     // still cash the shop holds (just moved to a different purpose) - so it also
                     // books a matching kas masuk into the same "Kas Kasir dari transaksi harian"
-                    // pool. Without this, cashPoolBalance('daily') would only ever go negative:
-                    // every draw subtracts from it and nothing ever tops it back up.
-                    $linkedKey = $idempotencyKey ? $idempotencyKey.'-daily-link' : null;
+                    // pool, under the same cashier. Without this, cashPoolBalance('daily') would
+                    // only ever go negative: every draw subtracts from it and nothing tops it back
+                    // up. idempotency_key is CHAR(36) - too short for the raw key plus a suffix -
+                    // so the linked entry's key is derived via hash instead of concatenation.
+                    $linkedKey = $idempotencyKey ? self::deriveLinkedKey($idempotencyKey) : null;
                     if (!$linkedKey || !Idempotency::find($linkedKey)) {
-                        $note = mb_substr('Link otomatis kas keluar'.($data['fundingCashierName'] ? " ({$data['fundingCashierName']})" : ''), 0, 50);
+                        $note = mb_substr("Transaksi {$data['fundingCashierName']}", 0, 50);
                         $linked = $repo->create('in', (float) $data['amount'], $data['category'], $note, $request->user()?->getKey(), $linkedKey);
                         DB::table('app_cash_entry_funding')->insert([
-                            'ledger_id' => $linked['id'], 'cash_source' => 'daily', 'created_at' => now(),
+                            'ledger_id' => $linked['id'], 'cash_source' => 'daily',
+                            'cashier_name' => $data['fundingCashierName'], 'created_at' => now(),
                         ]);
                     }
                 }
@@ -82,5 +85,14 @@ final class CashController
             throw $e;
         }
         return response()->json($entry, 201);
+    }
+
+    // idempotency_key is CHAR(36); this turns an arbitrary client key into a distinct, still
+    // 36-char, deterministic key for the auto-booked linked entry (same input -> same derived
+    // key, so a retried request can't double-book it).
+    private static function deriveLinkedKey(string $key): string
+    {
+        $hash = md5($key.':daily-link');
+        return sprintf('%s-%s-%s-%s-%s', substr($hash, 0, 8), substr($hash, 8, 4), substr($hash, 12, 4), substr($hash, 16, 4), substr($hash, 20, 12));
     }
 }

@@ -362,7 +362,7 @@ export async function addCashEntry(input: { direction: CashDirection; amount: nu
     // comment. Without it cashPoolBalance('daily') would only ever go negative.
     if (isDaily) {
       const linkedBalance = nextCashBalance(entry.balanceAfter, 'in', input.amount);
-      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: `Link otomatis kas keluar${input.fundingCashierName ? ` (${input.fundingCashierName})` : ''}`, cashSource: 'daily', balanceAfter: linkedBalance, createdAt: new Date().toISOString() });
+      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: `Transaksi ${input.fundingCashierName}`, cashSource: 'daily', fundingCashierName: input.fundingCashierName, balanceAfter: linkedBalance, createdAt: new Date().toISOString() });
     }
     return entry;
   }
