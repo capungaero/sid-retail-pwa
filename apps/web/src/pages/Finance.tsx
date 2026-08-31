@@ -86,7 +86,9 @@ function CashTab() {
       {error && <div className="notice error" role="alert">{error}</div>}
       {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : e.cashSource ? CASH_SOURCES.find(c => c.value === e.cashSource)?.label : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
     </section>
-    {adding && <CashEntryModal entries={entries} onClose={() => setAdding(false)} onSaved={entry => { setEntries(current => [...current, entry]); setAdding(false); }} />}
+    {/* Reloads instead of appending locally: a "daily" kas keluar also books a second, linked kas
+        masuk server-side (see CashController), so the response's one entry isn't the full picture. */}
+    {adding && <CashEntryModal entries={entries} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
   </>;
 }
 

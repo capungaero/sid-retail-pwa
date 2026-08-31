@@ -56,6 +56,21 @@ final class CashController
                     $forDate = Carbon::parse($entry['createdAt'])->subDay()->toDateString();
                     $loanRepo->create($entry['id'], (float) $data['amount'], $forDate, $data['note'] ?? null);
                 }
+                if ($data['fundingSource'] === 'daily') {
+                    // A "daily" draw is real cash pulled from that cashier's own till, but it's
+                    // still cash the shop holds (just moved to a different purpose) - so it also
+                    // books a matching kas masuk into the same "Kas Kasir dari transaksi harian"
+                    // pool. Without this, cashPoolBalance('daily') would only ever go negative:
+                    // every draw subtracts from it and nothing ever tops it back up.
+                    $linkedKey = $idempotencyKey ? $idempotencyKey.'-daily-link' : null;
+                    if (!$linkedKey || !Idempotency::find($linkedKey)) {
+                        $note = mb_substr('Link otomatis kas keluar'.($data['fundingCashierName'] ? " ({$data['fundingCashierName']})" : ''), 0, 50);
+                        $linked = $repo->create('in', (float) $data['amount'], $data['category'], $note, $request->user()?->getKey(), $linkedKey);
+                        DB::table('app_cash_entry_funding')->insert([
+                            'ledger_id' => $linked['id'], 'cash_source' => 'daily', 'created_at' => now(),
+                        ]);
+                    }
+                }
             } else {
                 DB::table('app_cash_entry_funding')->insert([
                     'ledger_id' => $entry['id'], 'cash_source' => $data['cashSource'], 'created_at' => now(),
