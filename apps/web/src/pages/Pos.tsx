@@ -4,7 +4,7 @@ import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getSto
 import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import { countDistinctTransactions, netSaleTotal } from '../lib/reports';
+import { countDistinctTransactions, exchangeHopsFor, netSaleTotal, rootSalesOnly } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import type { CartLine, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
@@ -149,20 +149,38 @@ function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer
     {method&&!isCash&&<label>Nomor referensi (opsional)<input className="money-input" type="text" maxLength={64} value={reference} onChange={e=>setReference(e.target.value)} placeholder="No. QRIS / transfer / approval" /></label>}
     {error&&<div className="notice error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={submitDisabled}>{saving?'Menyimpan…':<><Printer/>Simpan & cetak</>}</button></div></Modal>; }
 
+// One line's kurang-bayar/kembalian settlement, in words. Exchanges always settle the cash
+// difference immediately at the register (see ExchangeDialog), so there is no "belum selesai"
+// state today - this states that plainly rather than leaving it to be inferred.
+function settlementNote(diff: number): string {
+  if (diff > 0) return `Kurang bayar ${money.format(diff)} — sudah diterima, transaksi selesai.`;
+  if (diff < 0) return `Kembalian ${money.format(-diff)} — sudah diserahkan, transaksi selesai.`;
+  return 'Nilai sama, tidak ada selisih uang — transaksi selesai.';
+}
+
 // Editing a saved sale's lines directly (adjusting qty/price after the fact) still needs its own
 // carefully-designed, admin-gated endpoint - deliberately out of scope. "Tukar barang" instead
 // covers the customer-already-paid-but-changed-their-mind case without touching the original sale:
-// it restocks the old line and books the replacement as a brand new, linked transaction.
-function SaleDetailModal({ sale, onClose, onReprint, onExchange, reprinting }: { sale: SaleRecord; onClose: () => void; onReprint: () => void; onExchange: (line: SaleLine) => void; reprinting: boolean }) {
-  const exchanges = sale.exchanges ?? [];
-  const exchangeFor = (l: SaleLine) => exchanges.find(x => x.oldProductId === l.productId && x.oldUnit === l.unit);
+// it restocks the old line and books the replacement as a brand new, linked transaction - but that
+// new invoice is never shown as its own row (see rootSalesOnly); its whole history lives here,
+// under the one faktur the cashier actually looks up.
+function SaleDetailModal({ sale, allSales, onClose, onReprint, onExchange, reprinting }: { sale: SaleRecord; allSales: SaleRecord[]; onClose: () => void; onReprint: () => void; onExchange: (invoice: string, line: SaleLine) => void; reprinting: boolean }) {
+  const hasExchanges = sale.lines.some(l => exchangeHopsFor(sale, l.productId, l.unit, allSales).length > 0);
   return <Modal title={`Detail ${sale.invoice}`} onClose={onClose}>
     <p className="muted" style={{ marginTop: -8 }}>{new Date(sale.createdAt).toLocaleString('id-ID')} · {sale.customerName || 'Tanpa nama'}</p>
-    {exchanges.length > 0 && <div className="notice info" role="status"><ArrowLeftRight /> Transaksi ini sudah ditukar. Barang pengganti tercatat di {exchanges.map(x => x.newInvoice).join(', ')}.</div>}
+    {hasExchanges && <div className="notice info" role="status"><ArrowLeftRight /> Transaksi ini sudah ditukar — lihat riwayat penukaran per barang di bawah.</div>}
     <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Satuan</th><th className="numeric">Qty</th><th className="numeric">Harga</th><th className="numeric">Subtotal</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
-      {sale.lines.flatMap((l,i) => { const ex = exchangeFor(l); const rows = [
-        <tr key={i}><td>{l.productName}{ex && <span className="muted" style={{ display: 'block', fontSize: '.8em' }}>Ditukar → {ex.newProductName} ({ex.newInvoice})</span>}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td><td>{ex ? <span className="status">Ditukar</span> : <button className="button ghost" onClick={() => onExchange(l)}><ArrowLeftRight /> Tukar</button>}</td></tr>
-      ]; if (ex) rows.push(<tr key={`${i}-ex`} className="muted"><td><ArrowLeftRight size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />{ex.newProductName}</td><td>{ex.newUnit}</td><td className="numeric mono">{number.format(ex.newQty)}</td><td className="numeric mono">{money.format(ex.newLineValue / ex.newQty)}</td><td className="numeric mono">{money.format(ex.newLineValue)}</td><td /></tr>); return rows; })}
+      {sale.lines.flatMap((l,i) => {
+        const hops = exchangeHopsFor(sale, l.productId, l.unit, allSales);
+        const rows = [<tr key={i}><td>{l.productName}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td><td>{hops.length ? <span className="status">Ditukar</span> : <button className="button ghost" onClick={() => onExchange(sale.invoice, l)}><ArrowLeftRight /> Tukar</button>}</td></tr>];
+        hops.forEach((h, hi) => {
+          const isLast = hi === hops.length - 1;
+          const currentLine = isLast ? allSales.find(s => s.invoice === h.invoice)?.lines[0] : undefined;
+          rows.push(<tr key={`${i}-ex-${hi}`} className="muted"><td><ArrowLeftRight size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />{h.newProductName}</td><td>{h.newUnit}</td><td className="numeric mono">{number.format(h.newQty)}</td><td className="numeric mono">{money.format(h.newLineValue / h.newQty)}</td><td className="numeric mono">{money.format(h.newLineValue)}</td><td>{currentLine && <button className="button ghost" onClick={() => onExchange(h.invoice, currentLine)}><ArrowLeftRight /> Tukar lagi</button>}</td></tr>);
+          rows.push(<tr key={`${i}-note-${hi}`} className="muted"><td colSpan={6} style={{ fontSize: '.85em', paddingTop: 0 }}>{h.oldProductName} → {h.newProductName}: {settlementNote(h.diff)}</td></tr>);
+        });
+        return rows;
+      })}
     </tbody></table></div>
     <div className="summary"><div><span>Total</span><strong>{money.format(sale.total)}</strong></div><div><span>Bayar</span><strong>{money.format(sale.paid)}</strong></div><div className="grand-total"><span>Kembalian</span><strong>{money.format(sale.change)}</strong></div></div>
     <div className="modal-actions"><button className="button secondary" onClick={onClose}>Tutup</button><button className="button primary" data-autofocus="true" onClick={onReprint} disabled={reprinting}><Printer /> {reprinting ? 'Menyiapkan…' : 'Cetak ulang'}</button></div>
@@ -245,6 +263,11 @@ function HistoryTab() {
   }, [todaySales, cashierQuery, methodFilter]);
   const totalToday = useMemo(() => visibleSales.reduce((sum, s) => sum + netSaleTotal(s), 0), [visibleSales]);
   const transactionCountToday = useMemo(() => countDistinctTransactions(visibleSales), [visibleSales]);
+  // Rows actually rendered/printed: an exchange's replacement invoice never gets its own row -
+  // its whole history (what it became, kurang bayar/kembalian, settled or not) lives in the
+  // original faktur's own Detail instead. Totals above still read the full visibleSales set,
+  // which already nets exchanges correctly regardless of which rows are shown.
+  const tableRows = useMemo(() => rootSalesOnly(visibleSales), [visibleSales]);
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
     try {
@@ -267,7 +290,7 @@ function HistoryTab() {
     // Settings > Printer's "Tes cetak" does for the same reason.
     let profileName: string | undefined; try { profileName = (await getStoreProfile())?.name; } catch { profileName = undefined; }
     try {
-      openDailySalesReportPopup(visibleSales, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), profileName, popup);
+      openDailySalesReportPopup(tableRows, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), profileName, popup);
     } catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan cetak'); }
     finally { setPrintingReport(false); }
   }
@@ -280,13 +303,13 @@ function HistoryTab() {
           <option value="">Semua metode</option>
           {methodOptions.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
-        <button className="button secondary" onClick={printReport} disabled={printingReport || !visibleSales.length}><Printer /> {printingReport ? 'Menyiapkan…' : 'Cetak laporan (A4)'}</button>
+        <button className="button secondary" onClick={printReport} disabled={printingReport || !tableRows.length}><Printer /> {printingReport ? 'Menyiapkan…' : 'Cetak laporan (A4)'}</button>
         <button className="button ghost" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
       </div>
     </div>
     {error && <div className="notice error" role="alert">{error}</div>}
-    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !visibleSales.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
-      {visibleSales.map(s => <tr key={s.id}>
+    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !tableRows.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
+      {tableRows.map(s => <tr key={s.id}>
         <td className="mono">{s.invoice}{s.exchanges && s.exchanges.length > 0 && <span className="status" style={{ marginLeft: 6 }}>Ditukar</span>}</td>
         <td>{new Date(s.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
         <td>{s.cashierName || '—'}</td>
@@ -296,8 +319,8 @@ function HistoryTab() {
         <td><div className="row-actions"><button className="button ghost" onClick={() => setDetail(s)}>Detail</button><button className="button secondary" onClick={() => reprint(s)} disabled={reprintingId === s.id}><Printer /> {reprintingId === s.id ? '…' : 'Cetak ulang'}</button></div></td>
       </tr>)}
     </tbody></table></div>}
-    {detail && <SaleDetailModal sale={detail} reprinting={reprintingId === detail.id} onClose={() => setDetail(null)} onReprint={() => reprint(detail)} onExchange={line => { setDetail(null); setExchange({ invoice: detail.invoice, line }); }} />}
-    {exchange && <ExchangeDialog invoice={exchange.invoice} line={exchange.line} onClose={() => setExchange(null)} onDone={result => { setExchange(null); load(); alert(`Tukar barang berhasil. Faktur baru ${result.newInvoice}. ${result.diff > 0 ? `Kurang bayar ${money.format(result.diff)}.` : result.diff < 0 ? `Kembalian ${money.format(-result.diff)}.` : ''}`); }} />}
+    {detail && <SaleDetailModal sale={detail} allSales={sales} reprinting={reprintingId === detail.id} onClose={() => setDetail(null)} onReprint={() => reprint(detail)} onExchange={(invoice, line) => { setDetail(null); setExchange({ invoice, line }); }} />}
+    {exchange && <ExchangeDialog invoice={exchange.invoice} line={exchange.line} onClose={() => setExchange(null)} onDone={result => { setExchange(null); load(); alert(`Tukar barang berhasil, tercatat di faktur asal. ${result.diff > 0 ? `Kurang bayar ${money.format(result.diff)}.` : result.diff < 0 ? `Kembalian ${money.format(-result.diff)}.` : 'Tidak ada selisih.'}`); }} />}
     {modal}
   </section>;
 }

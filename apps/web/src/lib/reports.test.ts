@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPosition, countDistinctTransactions, exchangedOutValue, filterByRange, lowStockProducts, netSaleTotal, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPosition, countDistinctTransactions, exchangedOutValue, exchangeHopsFor, filterByRange, lowStockProducts, netSaleTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
 import type { CashLedgerEntry, DailyMethodRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
@@ -107,6 +107,42 @@ describe('countDistinctTransactions', () => {
   });
   it('excludes an exchange new-invoice so a swap reads as one transaction, not two', () => {
     expect(countDistinctTransactions([oldExchangedSale, newExchangeSale])).toBe(1);
+  });
+});
+
+describe('rootSalesOnly', () => {
+  it('keeps sales that were never anyone\'s exchange replacement', () => {
+    expect(rootSalesOnly([newExchangeSale]).map(s => s.invoice)).toEqual(['INV-NEW']);
+  });
+  it('drops a sale that is the new-invoice side of an exchange', () => {
+    expect(rootSalesOnly([oldExchangedSale, newExchangeSale]).map(s => s.invoice)).toEqual(['INV-OLD']);
+  });
+  it('drops every hop of a multi-step chain (A -> B -> C), keeping only the root', () => {
+    // Mirrors a real production case: CERI1 -> LASEGAR MELON -> a second swap later the same day.
+    const hopB: SaleRecord = { id: 'b', invoice: 'PWA-0005', customerId: 'g', customerName: 'Umum', lines: [{ productId: 'melon', productName: 'LASEGAR MELON', unit: 'DUS', qty: 1, price: 141000, discount: 0 }], total: 141000, paid: 141000, change: 0, createdAt: '2026-08-31T01:00:00.000Z', exchanges: [{ oldProductId: 'melon', oldUnit: 'DUS', oldQty: 1, oldLineValue: 141000, newInvoice: 'PWA-0006', newProductName: 'Air Mineral', newUnit: 'Botol', newQty: 1, newLineValue: 9000 }] };
+    const hopC: SaleRecord = { id: 'c', invoice: 'PWA-0006', customerId: 'g', customerName: 'Umum', lines: [{ productId: 'air', productName: 'Air Mineral', unit: 'Botol', qty: 1, price: 9000, discount: 0 }], total: 9000, paid: 9000, change: 0, createdAt: '2026-08-31T01:30:00.000Z' };
+    const hopA: SaleRecord = { id: 'a', invoice: 'PWA-0004', customerId: 'g', customerName: 'Umum', lines: [{ productId: 'ceri', productName: 'MAWAR CERIA KNG', unit: 'TIM', qty: 1, price: 93000, discount: 0 }], total: 93000, paid: 93000, change: 0, createdAt: '2026-08-31T00:30:00.000Z', exchanges: [{ oldProductId: 'ceri', oldUnit: 'TIM', oldQty: 1, oldLineValue: 93000, newInvoice: 'PWA-0005', newProductName: 'LASEGAR MELON', newUnit: 'DUS', newQty: 1, newLineValue: 141000 }] };
+    expect(rootSalesOnly([hopA, hopB, hopC]).map(s => s.invoice)).toEqual(['PWA-0004']);
+  });
+});
+
+describe('exchangeHopsFor', () => {
+  const hopB: SaleRecord = { id: 'b', invoice: 'PWA-0005', customerId: 'g', customerName: 'Umum', lines: [{ productId: 'melon', productName: 'LASEGAR MELON', unit: 'DUS', qty: 1, price: 141000, discount: 0 }], total: 141000, paid: 141000, change: 0, createdAt: '2026-08-31T01:00:00.000Z', exchanges: [{ oldProductId: 'melon', oldUnit: 'DUS', oldQty: 1, oldLineValue: 141000, newInvoice: 'PWA-0006', newProductName: 'Air Mineral', newUnit: 'Botol', newQty: 1, newLineValue: 9000 }] };
+  const hopC: SaleRecord = { id: 'c', invoice: 'PWA-0006', customerId: 'g', customerName: 'Umum', lines: [{ productId: 'air', productName: 'Air Mineral', unit: 'Botol', qty: 1, price: 9000, discount: 0 }], total: 9000, paid: 9000, change: 0, createdAt: '2026-08-31T01:30:00.000Z' };
+  const hopA: SaleRecord = { id: 'a', invoice: 'PWA-0004', customerId: 'g', customerName: 'Umum', lines: [{ productId: 'ceri', productName: 'MAWAR CERIA KNG', unit: 'TIM', qty: 1, price: 93000, discount: 0 }], total: 93000, paid: 93000, change: 0, createdAt: '2026-08-31T00:30:00.000Z', exchanges: [{ oldProductId: 'ceri', oldUnit: 'TIM', oldQty: 1, oldLineValue: 93000, newInvoice: 'PWA-0005', newProductName: 'LASEGAR MELON', newUnit: 'DUS', newQty: 1, newLineValue: 141000 }] };
+  const allSales = [hopA, hopB, hopC];
+  it('returns an empty list for a line that was never exchanged', () => {
+    expect(exchangeHopsFor(hopC, 'air', 'Botol', allSales)).toEqual([]);
+  });
+  it('returns one hop for a single swap', () => {
+    const hops = exchangeHopsFor(hopB, 'melon', 'DUS', allSales);
+    expect(hops).toEqual([{ invoice: 'PWA-0006', oldProductName: 'LASEGAR MELON', oldUnit: 'DUS', oldQty: 1, oldLineValue: 141000, newProductName: 'Air Mineral', newUnit: 'Botol', newQty: 1, newLineValue: 9000, diff: -132000 }]);
+  });
+  it('walks a two-hop chain (A -> B -> C) from the root line', () => {
+    const hops = exchangeHopsFor(hopA, 'ceri', 'TIM', allSales);
+    expect(hops).toHaveLength(2);
+    expect(hops[0]).toEqual({ invoice: 'PWA-0005', oldProductName: 'MAWAR CERIA KNG', oldUnit: 'TIM', oldQty: 1, oldLineValue: 93000, newProductName: 'LASEGAR MELON', newUnit: 'DUS', newQty: 1, newLineValue: 141000, diff: 48000 });
+    expect(hops[1]).toEqual({ invoice: 'PWA-0006', oldProductName: 'LASEGAR MELON', oldUnit: 'DUS', oldQty: 1, oldLineValue: 141000, newProductName: 'Air Mineral', newUnit: 'Botol', newQty: 1, newLineValue: 9000, diff: -132000 });
   });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banknote, CircleDollarSign, PackageSearch, ReceiptText, RefreshCw, TrendingDown, TrendingUp, TriangleAlert, Wallet } from 'lucide-react';
 import { getDailyRecap, listCashEntries, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
-import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
+import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { money, number } from '../lib/money';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import { todayKey } from '../lib/date';
@@ -87,11 +87,14 @@ function SalesPurchaseTab() {
   useEffect(load, []);
   const range = useMemo(() => ({ start: start || undefined, end: end || undefined }), [start, end]);
   const dateFilteredSales = useMemo(() => filterByRange(sales, range), [sales, range]);
-  const cashierOptions = useMemo(() => Array.from(new Set(dateFilteredSales.map(s => s.cashierName).filter((v): v is string => Boolean(v)))).sort(), [dateFilteredSales]);
+  const cashierOptions = useMemo(() => Array.from(new Set(rootSalesOnly(dateFilteredSales).map(s => s.cashierName).filter((v): v is string => Boolean(v)))).sort(), [dateFilteredSales]);
   const filteredSales = useMemo(() => cashier ? dateFilteredSales.filter(s => s.cashierName === cashier) : dateFilteredSales, [dateFilteredSales, cashier]);
   const filteredOrders = useMemo(() => filterByRange(orders, range), [orders, range]);
   const salesSummary = useMemo(() => summarizeSales(filteredSales), [filteredSales]);
   const purchaseSummary = useMemo(() => summarizePurchases(filteredOrders), [filteredOrders]);
+  // An exchange's replacement invoice never gets its own row - see rootSalesOnly. salesSummary
+  // above still reads the full filteredSales set, which already nets exchanges correctly.
+  const salesRows = useMemo(() => rootSalesOnly(filteredSales), [filteredSales]);
   const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name ?? id;
   return <>
     <DateRangeFilter start={start} end={end} setStart={setStart} setEnd={setEnd} onReset={() => { setStart(''); setEnd(''); setCashier(''); }} cashier={cashier} setCashier={setCashier} cashierOptions={cashierOptions} />
@@ -104,9 +107,9 @@ function SalesPurchaseTab() {
     </section>
     <section className="panel flush">
       <div className="table-tools"><h2>Detail penjualan</h2><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button></div>
-      {loading ? <div className="empty-state">Memuat data penjualan…</div> : !filteredSales.length ? <div className="empty-state">Tidak ada penjualan pada periode ini.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Faktur</th><th>Kasir</th><th>Pelanggan</th><th className="numeric">Baris</th><th className="numeric">Total</th></tr></thead><tbody>{filteredSales.map(s => <tr key={s.id}><td>{new Date(s.createdAt).toLocaleString('id-ID')}</td><td><button type="button" className="link-button mono" onClick={() => setDetail(s)}>{s.invoice}</button>{s.exchanges && s.exchanges.length > 0 && <span className="status" style={{ marginLeft: 6 }}>Ditukar</span>}</td><td>{s.cashierName || '—'}</td><td>{s.customerName}</td><td className="numeric mono">{s.lines.length}</td><td className="numeric mono">{money.format(s.total)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data penjualan…</div> : !salesRows.length ? <div className="empty-state">Tidak ada penjualan pada periode ini.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Faktur</th><th>Kasir</th><th>Pelanggan</th><th className="numeric">Baris</th><th className="numeric">Total</th></tr></thead><tbody>{salesRows.map(s => <tr key={s.id}><td>{new Date(s.createdAt).toLocaleString('id-ID')}</td><td><button type="button" className="link-button mono" onClick={() => setDetail(s)}>{s.invoice}</button>{s.exchanges && s.exchanges.length > 0 && <span className="status" style={{ marginLeft: 6 }}>Ditukar</span>}</td><td>{s.cashierName || '—'}</td><td>{s.customerName}</td><td className="numeric mono">{s.lines.length}</td><td className="numeric mono">{money.format(s.total)}</td></tr>)}</tbody></table></div>}
     </section>
-    {detail && <SaleStockDetailModal sale={detail} onClose={() => setDetail(null)} />}
+    {detail && <SaleStockDetailModal sale={detail} allSales={sales} onClose={() => setDetail(null)} />}
     <section className="panel flush">
       <div className="table-tools"><h2>Detail pembelian</h2></div>
       {loading ? <div className="empty-state">Memuat data pembelian…</div> : !filteredOrders.length ? <div className="empty-state">Tidak ada pembelian pada periode ini.</div> : <div className="table-wrap"><table><thead><tr><th>Referensi</th><th>Pemasok</th><th>Status</th><th className="numeric">Dipesan</th><th className="numeric">Diterima</th></tr></thead><tbody>{filteredOrders.map(po => <tr key={po.id}><td className="mono">{po.reference}</td><td>{supplierName(po.supplierId)}</td><td><span className={`status ${po.status === 'received' ? 'success' : ''}`}>{po.status === 'draft' ? 'Draft' : po.status === 'open' ? 'PO terbuka' : 'Diterima'}</span></td><td className="numeric mono">{money.format(po.lines.reduce((sum, l) => sum + l.qty * l.cost, 0))}</td><td className="numeric mono">{money.format(po.lines.reduce((sum, l) => sum + l.receivedQty * l.cost, 0))}</td></tr>)}</tbody></table></div>}

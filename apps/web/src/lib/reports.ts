@@ -34,12 +34,59 @@ export function netSaleTotal(sale: { total: number; exchanges?: SaleExchangeInfo
   return sale.total - exchangedOutValue(sale);
 }
 
+// A Tukar barang exchange books its replacement item as its own new invoice - this is the set of
+// invoices that are somebody's replacement (possibly several hops deep, if a replacement item was
+// itself exchanged again later).
+function newInvoiceIds(sales: { invoice: string; exchanges?: SaleExchangeInfo[] }[]): Set<string> {
+  return new Set(sales.flatMap(s => (s.exchanges ?? []).map(x => x.newInvoice)));
+}
+
 // A Tukar barang exchange books its replacement item as its own new invoice, so a naive row
 // count reads one customer visit as two transactions. This counts a set of sales the way a
 // cashier would: an exchange's new invoice is a continuation of its original, not a fresh one.
 export function countDistinctTransactions(sales: { invoice: string; exchanges?: SaleExchangeInfo[] }[]): number {
-  const exchangedInvoices = new Set(sales.flatMap(s => (s.exchanges ?? []).map(x => x.newInvoice)));
-  return sales.filter(s => !exchangedInvoices.has(s.invoice)).length;
+  return rootSalesOnly(sales).length;
+}
+
+// Only the "root" invoices - never anyone's exchange replacement, however many hops deep. Riwayat
+// hari ini / Ringkasan / Laporan list this instead of raw sales, so a customer who swapped an item
+// (or swapped it again) reads as one row that grew a history, not a chain of separate rows.
+export function rootSalesOnly<T extends { invoice: string; exchanges?: SaleExchangeInfo[] }>(sales: T[]): T[] {
+  const exchanged = newInvoiceIds(sales);
+  return sales.filter(s => !exchanged.has(s.invoice));
+}
+
+export type ExchangeHop = {
+  invoice: string; oldProductName: string; oldUnit: string; oldQty: number; oldLineValue: number;
+  newProductName: string; newUnit: string; newQty: number; newLineValue: number; diff: number;
+};
+
+// Walks the full history of one line on `sale` - identified by productId+unit - through however
+// many times it was exchanged again after the first swap (A -> B -> C -> ...), by following each
+// hop's newInvoice into the next sale (which always has exactly one line, per
+// SaleExchangeController) and checking whether THAT line was exchanged too. Returns hops in
+// chronological order; empty if this line was never exchanged.
+export function exchangeHopsFor(sale: SaleRecord, productId: string, unit: string, allSales: SaleRecord[]): ExchangeHop[] {
+  const byInvoice = new Map(allSales.map(s => [s.invoice, s]));
+  const hops: ExchangeHop[] = [];
+  let currentSale: SaleRecord | undefined = sale;
+  let matchProductId = productId, matchUnit = unit;
+  while (currentSale) {
+    const ex = (currentSale.exchanges ?? []).find(x => x.oldProductId === matchProductId && x.oldUnit === matchUnit);
+    if (!ex) break;
+    const oldLine = currentSale.lines.find(l => l.productId === matchProductId && l.unit === matchUnit);
+    hops.push({
+      invoice: ex.newInvoice,
+      oldProductName: oldLine?.productName ?? matchProductId, oldUnit: ex.oldUnit, oldQty: ex.oldQty, oldLineValue: ex.oldLineValue,
+      newProductName: ex.newProductName, newUnit: ex.newUnit, newQty: ex.newQty, newLineValue: ex.newLineValue,
+      diff: Math.round((ex.newLineValue - ex.oldLineValue) * 100) / 100,
+    });
+    const nextSale = byInvoice.get(ex.newInvoice);
+    if (!nextSale || !nextSale.lines.length) break;
+    currentSale = nextSale;
+    matchProductId = nextSale.lines[0].productId; matchUnit = nextSale.lines[0].unit;
+  }
+  return hops;
 }
 
 export type CashierCashTotal = { cashierName: string; amount: number };
