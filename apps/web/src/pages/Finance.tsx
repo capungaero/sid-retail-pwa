@@ -4,7 +4,7 @@ import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, c
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
 import { cashierDailyCashTotals } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
-import { money } from '../lib/money';
+import { money, number } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
 
 const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint: string }[] = [
@@ -120,7 +120,7 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
       </select>
       {!cashierTotals.length && <small className="muted">Belum ada transaksi tunai hari ini per kasir.</small>}
     </label>}
-    <label>Jumlah<input type="number" min="0" value={amount} onChange={e => setAmount(Number(e.target.value))} onFocus={e => e.currentTarget.select()} /></label>
+    <label>Jumlah<input type="text" inputMode="numeric" placeholder="0" value={amount ? number.format(amount) : ''} onChange={e => setAmount(Number(e.target.value.replace(/\D/g, '')) || 0)} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</button></div>
