@@ -31,8 +31,13 @@ final class AuthController
 
     // Legacy karyawan.password is MD5 (32 hex chars, verified against real sample data).
     // First successful legacy verification upgrades the identity to Argon2id in
-    // app_password_upgrades; subsequent logins are checked there first and never
-    // touch the legacy hash again.
+    // app_password_upgrades, checked first on every later login (fast path, no MD5 needed).
+    // But karyawan.password can still be changed by something outside this app (a legacy
+    // back-office tool, a direct DB edit) — if that happens, the cached upgrade hash goes
+    // stale and the account's real, current password stops working here with no way to
+    // detect or recover short of manually deleting the row. So a cache miss falls back to a
+    // fresh legacy check before giving up, and re-upgrades the cache if THAT succeeds —
+    // whichever password is actually live in karyawan.password always works.
     private function loginLegacyEmployee(string $username, string $password): ?array
     {
         $table = config('sid.auth.table');
@@ -42,9 +47,8 @@ final class AuthController
         if (!$row) return null;
 
         $upgraded = DB::table('app_password_upgrades')->where('legacy_identity', $username)->first();
-        if ($upgraded) {
-            $verified = Hash::check($password, $upgraded->password_hash);
-        } else {
+        $verified = $upgraded && Hash::check($password, $upgraded->password_hash);
+        if (!$verified) {
             $verified = hash_equals((string) $row->{$c['password']}, md5($password));
             if ($verified) {
                 DB::table('app_password_upgrades')->updateOrInsert(
