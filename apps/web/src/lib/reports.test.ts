@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashierRemainingDailyCash, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
 import type { CashLedgerEntry, DailyMethodRecap, LoanPayable, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
@@ -96,6 +96,22 @@ describe('cashierDailyCashTotals', () => {
   it('sums each cashier own cash-method sales for the given day only, worst first', () => {
     expect(cashierDailyCashTotals(cashierSales, '2026-08-29', 'Tunai')).toEqual([
       { cashierName: 'satri', amount: 150000 },
+      { cashierName: 'Admin', amount: 75000 },
+    ]);
+  });
+});
+
+describe('cashierRemainingDailyCash', () => {
+  const cashierSales: SaleRecord[] = [
+    { id: 's1', invoice: 'INV-1', customerId: 'g', customerName: 'Umum', cashierName: 'satri', methodName: 'Tunai', lines: [], total: 150000, paid: 150000, change: 0, createdAt: '2026-08-29T01:00:00.000Z' },
+    { id: 's2', invoice: 'INV-2', customerId: 'g', customerName: 'Umum', cashierName: 'Admin', methodName: 'Tunai', lines: [], total: 75000, paid: 75000, change: 0, createdAt: '2026-08-29T03:00:00.000Z' },
+  ];
+  const entries: CashLedgerEntry[] = [
+    { id: 'k1', direction: 'out', amount: 40000, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-29T02:00:00.000Z' },
+  ];
+  it('subtracts each cashier own "dari transaksi harian" draws so far from their gross Tunai total', () => {
+    expect(cashierRemainingDailyCash(cashierSales, entries, '2026-08-29', 'Tunai')).toEqual([
+      { cashierName: 'satri', amount: 110000 },
       { cashierName: 'Admin', amount: 75000 },
     ]);
   });

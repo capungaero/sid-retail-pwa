@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
 import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
-import { cashPoolBalance, cashierDailyCashTotals } from '../lib/reports';
+import { cashPoolBalance, cashierRemainingDailyCash } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, LoanPayable, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
@@ -109,7 +109,7 @@ function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntr
     getPaymentMethods().then(methods => setCashMethodName(methods.find(m => m.type === 'cash')?.name ?? null)).catch(() => setCashMethodName(null));
   }, []);
   const todayKey = localTodayKey();
-  const cashierTotals = useMemo(() => cashMethodName ? cashierDailyCashTotals(sales, todayKey, cashMethodName) : [], [sales, cashMethodName, todayKey]);
+  const cashierTotals = useMemo(() => cashMethodName ? cashierRemainingDailyCash(sales, entries, todayKey, cashMethodName) : [], [sales, entries, cashMethodName, todayKey]);
   // Generated once per modal open and reused across retries of the same submit attempt (e.g. a
   // client-side timeout after the server already succeeded), so a retry can't double-write.
   const idempotencyKey = useRef(crypto.randomUUID()).current;

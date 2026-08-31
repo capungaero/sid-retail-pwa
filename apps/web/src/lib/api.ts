@@ -350,19 +350,20 @@ export async function listCashEntries(): Promise<CashLedgerEntry[]> {
 
 export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string; cashSource?: CashInSource }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
   if (!baseUrl) {
-    const previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
+    let previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
     const isDaily = input.direction === 'out' && input.fundingSource === 'daily';
+    // A "daily" draw also books a matching kas masuk into the same pool - see CashController's
+    // comment. Booked FIRST so it always sorts/shows ahead of the draw that pulls from it.
+    // Without it cashPoolBalance('daily') would only ever go negative.
+    if (isDaily) {
+      previousBalance = nextCashBalance(previousBalance, 'in', input.amount);
+      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: `Transaksi ${input.fundingCashierName}`, cashSource: 'daily', fundingCashierName: input.fundingCashierName, balanceAfter: previousBalance, createdAt: new Date().toISOString() });
+    }
     const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, fundingCashierName: isDaily ? input.fundingCashierName : undefined, cashSource: input.direction === 'in' ? input.cashSource : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
     demoCashEntries.push(entry);
     // Draws against the previous day's already-closed till, not today's - see types.LoanPayable.
     if (input.direction === 'out' && input.fundingSource === 'loan') {
       demoLoanPayables.push({ id: crypto.randomUUID(), ledgerId: entry.id, amount: input.amount, forDate: todayKey(new Date(Date.now() - 86400000)), note: input.note, payments: [], createdAt: new Date().toISOString() });
-    }
-    // A "daily" draw also books a matching kas masuk into the same pool - see CashController's
-    // comment. Without it cashPoolBalance('daily') would only ever go negative.
-    if (isDaily) {
-      const linkedBalance = nextCashBalance(entry.balanceAfter, 'in', input.amount);
-      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: `Transaksi ${input.fundingCashierName}`, cashSource: 'daily', fundingCashierName: input.fundingCashierName, balanceAfter: linkedBalance, createdAt: new Date().toISOString() });
     }
     return entry;
   }

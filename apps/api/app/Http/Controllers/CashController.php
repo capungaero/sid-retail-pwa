@@ -41,6 +41,24 @@ final class CashController
             'cashSource' => 'required_if:direction,in|nullable|in:daily,loan,cashier,petty,in_transit,bank',
         ]);
         try {
+            // A "daily" kas keluar draw is money the shop already has (that cashier's own till),
+            // just spent for something else - its matching kas masuk is booked FIRST, so it
+            // always sorts/shows ahead of the draw that pulls from it (matches how "Kas Kasir dari
+            // transaksi harian" is meant to read: money comes in, then some of it goes back out).
+            if ($data['direction'] === 'out' && $data['fundingSource'] === 'daily') {
+                // idempotency_key is CHAR(36) - too short for the raw key plus a suffix - so the
+                // linked entry's key is derived via hash instead of concatenation.
+                $linkedKey = $idempotencyKey ? self::deriveLinkedKey($idempotencyKey) : null;
+                if (!$linkedKey || !Idempotency::find($linkedKey)) {
+                    $note = mb_substr("Transaksi {$data['fundingCashierName']}", 0, 50);
+                    $linked = $repo->create('in', (float) $data['amount'], $data['category'], $note, $request->user()?->getKey(), $linkedKey);
+                    DB::table('app_cash_entry_funding')->insert([
+                        'ledger_id' => $linked['id'], 'cash_source' => 'daily',
+                        'cashier_name' => $data['fundingCashierName'], 'created_at' => now(),
+                    ]);
+                }
+            }
+
             $entry = $repo->create($data['direction'], (float) $data['amount'], $data['category'], $data['note'] ?? null, $request->user()?->getKey(), $idempotencyKey);
             if ($data['direction'] === 'out') {
                 DB::table('app_cash_entry_funding')->insert([
@@ -55,24 +73,6 @@ final class CashController
                     // till - see LoanPayableRepository/migration comment.
                     $forDate = Carbon::parse($entry['createdAt'])->subDay()->toDateString();
                     $loanRepo->create($entry['id'], (float) $data['amount'], $forDate, $data['note'] ?? null);
-                }
-                if ($data['fundingSource'] === 'daily') {
-                    // A "daily" draw is real cash pulled from that cashier's own till, but it's
-                    // still cash the shop holds (just moved to a different purpose) - so it also
-                    // books a matching kas masuk into the same "Kas Kasir dari transaksi harian"
-                    // pool, under the same cashier. Without this, cashPoolBalance('daily') would
-                    // only ever go negative: every draw subtracts from it and nothing tops it back
-                    // up. idempotency_key is CHAR(36) - too short for the raw key plus a suffix -
-                    // so the linked entry's key is derived via hash instead of concatenation.
-                    $linkedKey = $idempotencyKey ? self::deriveLinkedKey($idempotencyKey) : null;
-                    if (!$linkedKey || !Idempotency::find($linkedKey)) {
-                        $note = mb_substr("Transaksi {$data['fundingCashierName']}", 0, 50);
-                        $linked = $repo->create('in', (float) $data['amount'], $data['category'], $note, $request->user()?->getKey(), $linkedKey);
-                        DB::table('app_cash_entry_funding')->insert([
-                            'ledger_id' => $linked['id'], 'cash_source' => 'daily',
-                            'cashier_name' => $data['fundingCashierName'], 'created_at' => now(),
-                        ]);
-                    }
                 }
             } else {
                 DB::table('app_cash_entry_funding')->insert([

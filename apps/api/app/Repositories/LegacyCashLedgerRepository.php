@@ -35,7 +35,13 @@ final class LegacyCashLedgerRepository
             }
             $balance += $direction === 'in' ? $amount : -$amount;
 
-            $id = 'MK'.now()->format('ymd').str_pad((string) ($rows->count() + 1), 5, '0', STR_PAD_LEFT);
+            // Sequence number is the running MAX across ALL rows (not scoped to today - matches
+            // existing ids like MK26082600001 that don't reset the suffix per day), not a row
+            // COUNT: count() breaks the moment any row is inserted out of band (a manual repair,
+            // a gap left by a deleted row) - the next count-based id can then collide with one
+            // already taken, and every future insert fails the same way until fixed.
+            $maxSeq = $rows->reduce(fn ($max, $r) => max($max, (int) substr((string) $r->{$c['id']}, -5)), 0);
+            $id = 'MK'.now()->format('ymd').str_pad((string) ($maxSeq + 1), 5, '0', STR_PAD_LEFT);
             $today = now()->toDateString();
             DB::table($table)->insert([
                 $c['id'] => $id, $c['date'] => $today, $c['direction'] => $direction, $c['category'] => $category,

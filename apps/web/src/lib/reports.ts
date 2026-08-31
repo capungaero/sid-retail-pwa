@@ -144,6 +144,15 @@ export function cashierDailyCashTotals(sales: SaleRecord[], date: string, cashMe
   return Array.from(map, ([cashierName, amount]) => ({ cashierName, amount })).sort((a, b) => b.amount - a.amount);
 }
 
+// Same picker, but each cashier's amount is what they still have left after their own "dari
+// transaksi harian" draws made so far today - so choosing them again in the kas keluar dialog
+// shows what's actually still available, not their gross Tunai revenue for the day.
+export function cashierRemainingDailyCash(sales: SaleRecord[], entries: CashLedgerEntry[], date: string, cashMethodName: string): CashierCashTotal[] {
+  const range: DateRange = { start: date, end: date };
+  return cashierDailyCashTotals(sales, date, cashMethodName)
+    .map(c => ({ cashierName: c.cashierName, amount: c.amount - dailyDrawnTotal(entries, range, c.cashierName) }));
+}
+
 // Aggregates completed sales into transaction count, units sold, revenue and total discount given.
 export function summarizeSales(sales: SaleRecord[]): SalesSummary {
   const totals = sales.reduce<Omit<SalesSummary, 'count'>>((acc, sale) => {
