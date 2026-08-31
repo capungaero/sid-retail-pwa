@@ -63,6 +63,20 @@ export function cashPoolBalance(entries: CashLedgerEntry[], pool: CashFundingSou
   }, 0);
 }
 
+export type WalletLedgerEntry = CashLedgerEntry & { walletBalanceAfter: number };
+
+// Entries tagged with one wallet (fundingSource for kas keluar, cashSource for kas masuk), each
+// carrying its OWN running balance scoped to just that wallet - not the whole store's
+// balanceAfter. Used to isolate e.g. "Kas Kasir (Transaksi Hari Ini)" from a large "Saldo
+// Akumulasi Toko" draw elsewhere, which would otherwise make the whole ledger's balanceAfter read
+// as a big, misleading negative number on what should be an unrelated wallet's own log.
+export function walletLedger(entries: CashLedgerEntry[], wallet: CashFundingSource): WalletLedgerEntry[] {
+  let running = 0;
+  return entries
+    .filter(e => e.fundingSource === wallet || e.cashSource === wallet)
+    .map(e => { running += e.direction === 'in' ? e.amount : -e.amount; return { ...e, walletBalanceAfter: running }; });
+}
+
 export type SalesSummary = { count: number; qtySold: number; revenue: number; discount: number };
 
 // Sum of a sale's own lines later swapped out via Tukar barang — the portion of its total that

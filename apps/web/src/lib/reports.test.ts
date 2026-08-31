@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashierRemainingDailyCash, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashierRemainingDailyCash, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, walletLedger, withinRange, withMethodPercentages } from './reports';
 import type { CashLedgerEntry, DailyMethodRecap, LoanPayable, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
@@ -185,6 +185,24 @@ describe('cashPoolBalance', () => {
   });
   it('returns 0 for a pool with no entries', () => {
     expect(cashPoolBalance(entries, 'in_transit')).toBe(0);
+  });
+});
+
+describe('walletLedger', () => {
+  const entries: CashLedgerEntry[] = [
+    { id: 'w1', direction: 'in', amount: 500000, category: 'x', cashSource: 'petty', balanceAfter: 500000, createdAt: '2026-08-01T00:00:00.000Z' },
+    { id: 'w2', direction: 'out', amount: 999999999, category: 'x', fundingSource: 'loan', balanceAfter: -999499999, createdAt: '2026-08-02T00:00:00.000Z' },
+    { id: 'w3', direction: 'out', amount: 200000, category: 'x', fundingSource: 'petty', balanceAfter: -999699999, createdAt: '2026-08-03T00:00:00.000Z' },
+  ];
+  it('keeps only entries tagged with the given wallet, with a running balance scoped to just those', () => {
+    expect(walletLedger(entries, 'petty')).toEqual([
+      { ...entries[0], walletBalanceAfter: 500000 },
+      { ...entries[2], walletBalanceAfter: 300000 },
+    ]);
+  });
+  it("isn't dragged negative by a huge draw from an unrelated wallet (Saldo Akumulasi Toko)", () => {
+    const petty = walletLedger(entries, 'petty');
+    expect(petty.at(-1)?.walletBalanceAfter).toBe(300000);
   });
 });
 

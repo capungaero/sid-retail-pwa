@@ -2,29 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
 import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
-import { cashPoolBalance, cashierRemainingDailyCash } from '../lib/reports';
+import { cashPoolBalance, cashierRemainingDailyCash, walletLedger } from '../lib/reports';
+import type { WalletLedgerEntry } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, LoanPayable, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
 
+// 'cashier' and 'in_transit' still exist as CashFundingSource/CashInSource values (old entries
+// tagged with them still load and display fine via these arrays' .find() lookups elsewhere), but
+// are no longer offered here - four clean, non-overlapping wallets only.
 const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint?: string }[] = [
-  { value: 'daily', label: 'Kas Kasir dari transaksi harian', hint: 'Diambil langsung dari hasil jualan hari ini' },
-  { value: 'loan', label: 'Dari kas pinjaman', hint: 'Mengurangi saldo penjualan HARI SEBELUMNYA di Laporan, tercatat sebagai hutang pinjaman - lunas saat dibayar (lihat tab Hutang pinjaman)' },
-  { value: 'cashier', label: 'Kas Kasir' },
-  { value: 'petty', label: 'Kas Kecil' },
-  { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
+  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)', hint: 'Diambil langsung dari hasil jualan hari ini - mengurangi Rekap harian tanggal itu juga' },
+  { value: 'loan', label: 'Saldo Akumulasi Toko (Tarik Modal/Laba)', hint: 'Diambil dari saldo akumulasi toko, BUKAN dari drawer kasir hari ini - tercatat sebagai hutang di tab Hutang pinjaman, mengurangi saldo penjualan HARI SEBELUMNYA di Laporan sampai dibayar' },
   { value: 'bank', label: 'Kas Bank' },
+  { value: 'petty', label: 'Kas Kecil' },
 ];
 
 // Same choices as FUNDING_SOURCES (kas keluar), for a consistent sumber dana picker in both
 // directions - 'daily'/'loan' are plain tags here, no cashier picker or netting attached.
 const CASH_SOURCES: { value: CashInSource; label: string }[] = [
-  { value: 'daily', label: 'Kas Kasir dari transaksi harian' },
-  { value: 'loan', label: 'Dari kas pinjaman' },
-  { value: 'cashier', label: 'Kas Kasir' },
-  { value: 'petty', label: 'Kas Kecil' },
-  { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
+  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
+  { value: 'loan', label: 'Saldo Akumulasi Toko (Tarik Modal/Laba)' },
   { value: 'bank', label: 'Kas Bank' },
+  { value: 'petty', label: 'Kas Kecil' },
 ];
 
 const TABS = [
@@ -74,17 +74,41 @@ export function Finance() {
 
 const CASH_CATEGORIES = ['Setoran modal', 'Penjualan tunai tambahan', 'Beli perlengkapan toko', 'Biaya operasional', 'Pengambilan pribadi', 'Lainnya'];
 
+const WALLET_FILTERS: { value: CashFundingSource | 'all'; label: string }[] = [
+  { value: 'all', label: 'Semua dompet' },
+  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
+  { value: 'loan', label: 'Saldo Akumulasi Toko' },
+  { value: 'bank', label: 'Kas Bank' },
+  { value: 'petty', label: 'Kas Kecil' },
+];
+
 function CashTab() {
   const [entries, setEntries] = useState<CashLedgerEntry[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [adding, setAdding] = useState(false);
+  const [wallet, setWallet] = useState<CashFundingSource | 'all'>('all');
   const load = () => { setLoading(true); setError(''); listCashEntries().then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
-  const ordered = useMemo(() => [...entries].reverse(), [entries]);
-  const balance = entries.at(-1)?.balanceAfter ?? 0;
+  // "Semua dompet" shows the whole store ledger with its own balanceAfter; picking one wallet
+  // isolates just its entries with a running balance scoped to THAT wallet only - a big Saldo
+  // Akumulasi Toko draw elsewhere shouldn't make Kas Kasir's own log read as deeply negative.
+  // Normalized to WalletLedgerEntry either way so the table below never has to branch on shape.
+  const walletEntries = useMemo<WalletLedgerEntry[]>(() => wallet === 'all'
+    ? entries.map(e => ({ ...e, walletBalanceAfter: e.balanceAfter }))
+    : walletLedger(entries, wallet), [entries, wallet]);
+  const ordered = useMemo(() => [...walletEntries].reverse(), [walletEntries]);
+  const balance = ordered[0]?.walletBalanceAfter ?? 0;
   return <>
     <section className="panel flush">
-      <div className="table-tools"><h2>Buku kas</h2><span className="status success">Saldo saat ini: {money.format(balance)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Catat transaksi kas</button></div>
+      <div className="table-tools">
+        <h2>Buku kas</h2>
+        <select aria-label="Filter dompet" value={wallet} onChange={e => setWallet(e.target.value as CashFundingSource | 'all')}>
+          {WALLET_FILTERS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+        </select>
+        <span className="status success">{wallet === 'all' ? 'Saldo saat ini' : `Saldo ${WALLET_FILTERS.find(w => w.value === wallet)?.label}`}: {money.format(balance)}</span>
+        <button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
+        <button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Catat transaksi kas</button>
+      </div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : e.cashSource ? `${CASH_SOURCES.find(c => c.value === e.cashSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : e.cashSource ? `${CASH_SOURCES.find(c => c.value === e.cashSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.walletBalanceAfter)}</td></tr>)}</tbody></table></div>}
     </section>
     {/* Reloads instead of appending locally: a "daily" kas keluar also books a second, linked kas
         masuk server-side (see CashController), so the response's one entry isn't the full picture. */}
@@ -92,7 +116,7 @@ function CashTab() {
   </>;
 }
 
-const POOL_SOURCES: CashFundingSource[] = ['cashier', 'petty', 'in_transit', 'bank'];
+const POOL_SOURCES: CashFundingSource[] = ['petty', 'bank'];
 
 function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntry[]; onClose: () => void; onSaved: (entry: CashLedgerEntry) => void }) {
   const [direction, setDirection] = useState<CashDirection>('in'); const [amount, setAmount] = useState(0); const [category, setCategory] = useState(CASH_CATEGORIES[0]); const [note, setNote] = useState('');
