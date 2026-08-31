@@ -8,7 +8,7 @@ import { money, number } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, LoanPayable, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
 
 const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint?: string }[] = [
-  { value: 'daily', label: 'Dari transaksi harian', hint: 'Diambil langsung dari hasil jualan hari ini' },
+  { value: 'daily', label: 'Kas Kasir dari transaksi harian', hint: 'Diambil langsung dari hasil jualan hari ini' },
   { value: 'loan', label: 'Dari kas pinjaman', hint: 'Mengurangi saldo penjualan HARI SEBELUMNYA di Laporan, tercatat sebagai hutang pinjaman - lunas saat dibayar (lihat tab Hutang pinjaman)' },
   { value: 'cashier', label: 'Kas Kasir' },
   { value: 'petty', label: 'Kas Kecil' },
@@ -16,7 +16,11 @@ const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint?: string 
   { value: 'bank', label: 'Kas Bank' },
 ];
 
+// Same choices as FUNDING_SOURCES (kas keluar), for a consistent sumber dana picker in both
+// directions - 'daily'/'loan' are plain tags here, no cashier picker or netting attached.
 const CASH_SOURCES: { value: CashInSource; label: string }[] = [
+  { value: 'daily', label: 'Kas Kasir dari transaksi harian' },
+  { value: 'loan', label: 'Dari kas pinjaman' },
   { value: 'cashier', label: 'Kas Kasir' },
   { value: 'petty', label: 'Kas Kecil' },
   { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
@@ -131,7 +135,7 @@ function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntr
     </div>
     <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{CASH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
     {direction === 'in' && <label>Sumber dana<select value={cashSource ?? ''} onChange={e => setCashSource(e.target.value as CashInSource)}><option value="" disabled>Pilih sumber dana…</option>{CASH_SOURCES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
-      {cashSource && <small className="muted">Saldo {CASH_SOURCES.find(c => c.value === cashSource)?.label} saat ini: {money.format(cashPoolBalance(entries, cashSource))}</small>}
+      {cashSource && POOL_SOURCES.includes(cashSource) && <small className="muted">Saldo {CASH_SOURCES.find(c => c.value === cashSource)?.label} saat ini: {money.format(cashPoolBalance(entries, cashSource))}</small>}
     </label>}
     {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
       {FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}

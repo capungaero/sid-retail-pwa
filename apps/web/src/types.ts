@@ -58,8 +58,10 @@ export type CashDirection = 'in' | 'out';
 // money going the other way; a kas keluar tagged with one subtracts from that pool's own kas-masuk
 // balance.
 export type CashFundingSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank';
-// Only meaningful for direction 'in': which cash pool the money landed in.
-export type CashInSource = 'cashier' | 'petty' | 'in_transit' | 'bank';
+// Only meaningful for direction 'in': which cash pool the money landed in. Mirrors
+// CashFundingSource's full vocabulary - 'daily'/'loan' are plain descriptive tags here (no
+// netting/debt logic attached the way they are for kas keluar), same as cashier/petty/in_transit/bank.
+export type CashInSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank';
 export type CashLedgerEntry = { id: string; direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string; cashSource?: CashInSource; balanceAfter: number; createdAt: string };
 
 export type PayablePayment = { id: string; amount: number; note?: string; createdAt: string };

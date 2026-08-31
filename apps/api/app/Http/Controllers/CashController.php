@@ -36,8 +36,9 @@ final class CashController
             // the plain cash-pool tags (cashier/petty/in_transit/bank) aren't tied to any single
             // cashier's day.
             'fundingCashierName' => 'required_if:fundingSource,daily|nullable|string|max:100',
-            // Which cash pool a "kas masuk" entry landed in.
-            'cashSource' => 'required_if:direction,in|nullable|in:cashier,petty,in_transit,bank',
+            // Which cash pool a "kas masuk" entry landed in. Mirrors fundingSource's vocabulary -
+            // 'daily'/'loan' here are plain descriptive tags, no cashier/debt logic attached.
+            'cashSource' => 'required_if:direction,in|nullable|in:daily,loan,cashier,petty,in_transit,bank',
         ]);
         try {
             $entry = $repo->create($data['direction'], (float) $data['amount'], $data['category'], $data['note'] ?? null, $request->user()?->getKey(), $idempotencyKey);
