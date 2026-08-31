@@ -7,6 +7,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DailyReportController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\LeaveRequestController;
+use App\Http\Controllers\LoanPayableController;
 use App\Http\Controllers\PayableController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\PaymentInstrumentController;
@@ -83,6 +84,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/finance/cash-entries', [CashController::class, 'store'])->middleware('ability:finance:write');
     Route::get('/finance/payables', [PayableController::class, 'index'])->middleware('ability:finance:read');
     Route::post('/finance/payables/{id}/payments', [PayableController::class, 'addPayment'])->middleware('ability:finance:write');
+    Route::get('/finance/loan-payables', [LoanPayableController::class, 'index'])->middleware('ability:finance:read');
+    Route::post('/finance/loan-payables/{id}/payments', [LoanPayableController::class, 'addPayment'])->middleware('ability:finance:write');
     Route::get('/finance/receivables', [ReceivableController::class, 'index'])->middleware('ability:finance:read');
     Route::post('/finance/receivables', [ReceivableController::class, 'store'])->middleware('ability:finance:write');
     Route::post('/finance/receivables/{id}/payments', [ReceivableController::class, 'addPayment'])->middleware('ability:finance:write');

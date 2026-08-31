@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
-import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
+import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
 import { cashPoolBalance, cashierDailyCashTotals } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
-import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
+import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, LoanPayable, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
 
 const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint?: string }[] = [
   { value: 'daily', label: 'Dari transaksi harian', hint: 'Diambil langsung dari hasil jualan hari ini' },
-  { value: 'loan', label: 'Dari kas pinjaman', hint: 'Diambil dari kas penjualan keseluruhan, dikembalikan nanti' },
+  { value: 'loan', label: 'Dari kas pinjaman', hint: 'Mengurangi saldo penjualan HARI SEBELUMNYA di Laporan, tercatat sebagai hutang pinjaman - lunas saat dibayar (lihat tab Hutang pinjaman)' },
   { value: 'cashier', label: 'Kas Kasir' },
   { value: 'petty', label: 'Kas Kecil' },
   { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
@@ -27,7 +27,8 @@ const TABS = [
   { key: 'cash', label: 'Kas masuk & keluar' },
   { key: 'payable', label: 'Hutang supplier' },
   { key: 'receivable', label: 'Piutang pelanggan' },
-  { key: 'instrument', label: 'Kartu, voucher & giro' }
+  { key: 'instrument', label: 'Kartu, voucher & giro' },
+  { key: 'loan-payable', label: 'Hutang pinjaman' }
 ] as const;
 type TabKey = typeof TABS[number]['key'];
 
@@ -63,6 +64,7 @@ export function Finance() {
     {tab === 'payable' && <PayableTab />}
     {tab === 'receivable' && <ReceivableTab />}
     {tab === 'instrument' && <InstrumentTab />}
+    {tab === 'loan-payable' && <LoanPayableTab />}
   </div>;
 }
 
@@ -296,5 +298,45 @@ function InstrumentModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</button></div>
+  </section></div>;
+}
+
+// Hutang pinjaman - booked automatically whenever a kas keluar draws "dari kas pinjaman" (see
+// CashEntryModal), never created manually here. Mirrors PayableTab/PayablePaymentModal: paying
+// one down shrinks its outstanding amount, which is what reportedRevenueDrawnTotal reads to
+// restore that loan's forDate Penjualan figure in Laporan.
+function LoanPayableTab() {
+  const [loans, setLoans] = useState<LoanPayable[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [paying, setPaying] = useState<LoanPayable | null>(null);
+  const load = () => { setLoading(true); setError(''); listLoanPayables().then(setLoans).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
+  useEffect(load, []);
+  const totalOutstanding = loans.reduce((sum, l) => sum + payableOutstanding(l), 0);
+  return <>
+    <section className="panel flush">
+      <div className="table-tools"><h2>Hutang pinjaman</h2><span className="status">Total sisa: {money.format(totalOutstanding)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button></div>
+      {error && <div className="notice error" role="alert">{error}</div>}
+      {loading ? <div className="empty-state">Memuat data hutang pinjaman…</div> : !loans.length ? <div className="empty-state">Belum ada hutang pinjaman.</div> : <div className="table-wrap"><table><thead><tr><th>Untuk tanggal</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Sudah dibayar</th><th className="numeric">Sisa</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{loans.map(l => { const outstanding = payableOutstanding(l); return <tr key={l.id}><td>{new Date(`${l.forDate}T00:00:00`).toLocaleDateString('id-ID')}</td><td>{l.note ?? '—'}</td><td className="numeric mono">{money.format(l.amount)}</td><td className="numeric mono">{money.format(l.amount - outstanding)}</td><td className="numeric mono">{money.format(outstanding)}</td><td>{outstanding > 0 ? <button className="button secondary" onClick={() => setPaying(l)}>Bayar</button> : <span className="status success">Lunas</span>}</td></tr>; })}</tbody></table></div>}
+    </section>
+    {paying && <LoanPaymentModal loan={paying} onClose={() => setPaying(null)} onSaved={updated => { setLoans(current => current.map(l => l.id === updated.id ? updated : l)); setPaying(null); }} />}
+  </>;
+}
+
+function LoanPaymentModal({ loan, onClose, onSaved }: { loan: LoanPayable; onClose: () => void; onSaved: (loan: LoanPayable) => void }) {
+  const outstanding = payableOutstanding(loan);
+  const [amount, setAmount] = useState(outstanding); const [note, setNote] = useState(''); const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  const modalRef = useModalTrap(onClose);
+  const idempotencyKey = useRef(crypto.randomUUID()).current;
+  async function submit() {
+    if (amount <= 0) return setError('Jumlah harus lebih dari 0.');
+    setSaving(true); setError('');
+    try { onSaved(await addLoanPayment(loan.id, amount, note.trim() || undefined, idempotencyKey)); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan pembayaran'); setSaving(false); }
+  }
+  return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="loan-title">
+    <div className="modal-heading"><div><p className="eyebrow">Hutang pinjaman</p><h2 id="loan-title">Bayar hutang {new Date(`${loan.forDate}T00:00:00`).toLocaleDateString('id-ID')}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
+    <p>Sisa hutang: <strong>{money.format(outstanding)}</strong></p>
+    <label>Jumlah dibayar<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount} onChange={e => setAmount(Math.max(0, Math.min(outstanding, Number(e.target.value))))} /></label>
+    <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan pembayaran'}</button></div>
   </section></div>;
 }

@@ -48,12 +48,15 @@ export type StockMovement = { id: string; productId: string; productName: string
 
 export type CashDirection = 'in' | 'out';
 // Only meaningful for direction 'out': where the cash physically came from. 'daily' and 'loan'
-// both net against sales revenue - 'daily' against that day's own revenue (reports.ts's
-// dailyDrawnTotal, used by Rekap harian/Ringkasan) and 'loan' against the overall sales pool over
-// a range (reportedRevenueDrawnTotal, used by Laporan > Penjualan & pembelian only); only 'daily'
-// asks which cashier it was drawn from. The rest (cashier/petty/in_transit/bank) are running-
-// balance pool tags (see cashPoolBalance) - same vocabulary as CashInSource, just for money going
-// the other way; a kas keluar tagged with one subtracts from that pool's own kas-masuk balance.
+// both net against sales revenue in Laporan > Penjualan & pembelian only 'daily' asks which
+// cashier it was drawn from. 'daily' nets against that SAME day's own revenue (reports.ts's
+// dailyDrawnTotal). 'loan' instead books a LoanPayable debt (see types.LoanPayable) against the
+// PREVIOUS day (the already-closed till, not today's still-open one) and nets only its
+// outstanding balance there (loanOutstandingDrawnTotal) - so paying the loan back (Keuangan >
+// Hutang pinjaman) restores that day's Penjualan figure. The rest (cashier/petty/in_transit/bank)
+// are running-balance pool tags (see cashPoolBalance) - same vocabulary as CashInSource, just for
+// money going the other way; a kas keluar tagged with one subtracts from that pool's own kas-masuk
+// balance.
 export type CashFundingSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank';
 // Only meaningful for direction 'in': which cash pool the money landed in.
 export type CashInSource = 'cashier' | 'petty' | 'in_transit' | 'bank';
@@ -61,6 +64,13 @@ export type CashLedgerEntry = { id: string; direction: CashDirection; amount: nu
 
 export type PayablePayment = { id: string; amount: number; note?: string; createdAt: string };
 export type Payable = { id: string; supplierId: string; supplierName: string; reference: string; amount: number; payments: PayablePayment[]; createdAt: string; dueAt?: string };
+
+export type LoanPayment = { id: string; amount: number; note?: string; createdAt: string };
+// Booked whenever a kas keluar draws "dari kas pinjaman". forDate is the day it draws against -
+// the day BEFORE the draw itself, since a loan pulls from the previous day's already-closed
+// sales rather than today's still-open till (see reports.ts's loanOutstandingDrawnTotal, which
+// nets only the outstanding amount - amount minus payments - against that date in Laporan).
+export type LoanPayable = { id: string; ledgerId: string; amount: number; forDate: string; note?: string; payments: LoanPayment[]; createdAt: string };
 
 export type ReceivablePayment = { id: string; amount: number; note?: string; createdAt: string };
 export type Receivable = { id: string; customerId: string; customerName: string; reference: string; amount: number; payments: ReceivablePayment[]; createdAt: string; dueAt?: string };

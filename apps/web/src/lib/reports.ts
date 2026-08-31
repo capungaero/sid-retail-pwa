@@ -1,5 +1,5 @@
-import { payableOutstanding, receivableOutstanding } from './finance';
-import type { CashFundingSource, CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleExchangeInfo, SaleRecord } from '../types';
+import { payableOutstanding, receivableOutstanding, totalPaid } from './finance';
+import type { CashFundingSource, CashLedgerEntry, DailyMethodRecap, DailyRecap, LoanPayable, Payable, Product, PurchaseOrder, Receivable, SaleExchangeInfo, SaleRecord } from '../types';
 
 export type DateRange = { start?: string; end?: string };
 
@@ -32,16 +32,23 @@ export function dailyDrawnTotal(entries: CashLedgerEntry[], range: DateRange, ca
     .reduce((sum, e) => sum + e.amount, 0);
 }
 
-// Same idea as dailyDrawnTotal, but also counts "dari kas pinjaman" draws. Used only by Laporan >
-// Penjualan & pembelian, which reports over a chosen range rather than one day - matching kas
-// pinjaman's own framing ("diambil dari kas penjualan keseluruhan"). Rekap harian and Ringkasan
-// stay 'daily'-only (dailyDrawnTotal): both are specifically "today", and a loan draw isn't today's
-// own revenue the way a 'daily' draw is.
-export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], range: DateRange, cashierName?: string): number {
-  return entries
-    .filter(e => e.direction === 'out' && (e.fundingSource === 'daily' || e.fundingSource === 'loan') && withinRange(e.createdAt, range))
-    .filter(e => !cashierName || e.fundingCashierName === cashierName)
-    .reduce((sum, e) => sum + e.amount, 0);
+// Sum of loan payables' OUTSTANDING balance (amount minus payments) whose forDate falls in range -
+// forDate is the day BEFORE the kas keluar draw itself (a loan pulls from the previous day's
+// already-closed till, not today's still-open one - see types.LoanPayable), so this nets against
+// that earlier day rather than the day the draw was recorded. Paying a loan back (Keuangan >
+// Hutang pinjaman) shrinks the outstanding amount and so restores that day's Penjualan figure.
+export function loanOutstandingDrawnTotal(loans: LoanPayable[], range: DateRange): number {
+  return loans
+    .filter(l => withinRange(`${l.forDate}T00:00:00.000`, range))
+    .reduce((sum, l) => sum + Math.max(0, l.amount - totalPaid(l.payments)), 0);
+}
+
+// Combines dailyDrawnTotal with loanOutstandingDrawnTotal - the full deduction Laporan >
+// Penjualan & pembelian applies to its "Penjualan" figure. Rekap harian and Ringkasan stay
+// 'daily'-only (dailyDrawnTotal): both are specifically "today", and a loan draw was never
+// today's own revenue the way a 'daily' draw is.
+export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], loans: LoanPayable[], range: DateRange, cashierName?: string): number {
+  return dailyDrawnTotal(entries, range, cashierName) + loanOutstandingDrawnTotal(loans, range);
 }
 
 // Running balance for one physical cash pool tag (Kas Kasir / Kas Kecil / Kas Dalam Perjalanan /

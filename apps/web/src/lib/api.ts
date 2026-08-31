@@ -1,4 +1,4 @@
-import { demoAttendanceEntries, demoAuditLog, demoCashEntries, demoCustomers, demoEmployees, demoInstruments, demoLeaveRequests, demoPayables, demoPaymentMethods, demoPrinterConfig, demoProducts, demoPurchaseOrders, demoReceivables, demoRolePermissions, demoSalePayments, demoSalesLog, demoShiftAssignments, demoShiftDefs, demoStockMovements, demoStoreProfile, demoSuppliers, demoUserAccounts } from '../data';
+import { demoAttendanceEntries, demoAuditLog, demoCashEntries, demoCustomers, demoEmployees, demoInstruments, demoLeaveRequests, demoLoanPayables, demoPayables, demoPaymentMethods, demoPrinterConfig, demoProducts, demoPurchaseOrders, demoReceivables, demoRolePermissions, demoSalePayments, demoSalesLog, demoShiftAssignments, demoShiftDefs, demoStockMovements, demoStoreProfile, demoSuppliers, demoUserAccounts } from '../data';
 import { applyReceipt, poStatusAfterReceipt, signedReturnQty } from './inventory';
 import { canTransitionInstrument, capPayment, nextCashBalance, payableOutstanding, receivableOutstanding } from './finance';
 import { computeAttendanceStatus, findScheduledShift } from './hrd';
@@ -6,7 +6,7 @@ import { buildDailyRecap } from './reports';
 import { todayKey } from './date';
 import { validateStoreProfile } from './settings';
 import { openReceiptPreviewPopup } from './print';
-import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, DailyRecap, Employee, ExchangePayload, ExchangeResult, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
+import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, DailyRecap, Employee, ExchangePayload, ExchangeResult, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, LoanPayable, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
 
 const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') as string | undefined;
 export const isDemoMode = !baseUrl;
@@ -354,6 +354,10 @@ export async function addCashEntry(input: { direction: CashDirection; amount: nu
     const isDaily = input.direction === 'out' && input.fundingSource === 'daily';
     const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, fundingCashierName: isDaily ? input.fundingCashierName : undefined, cashSource: input.direction === 'in' ? input.cashSource : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
     demoCashEntries.push(entry);
+    // Draws against the previous day's already-closed till, not today's - see types.LoanPayable.
+    if (input.direction === 'out' && input.fundingSource === 'loan') {
+      demoLoanPayables.push({ id: crypto.randomUUID(), ledgerId: entry.id, amount: input.amount, forDate: todayKey(new Date(Date.now() - 86400000)), note: input.note, payments: [], createdAt: new Date().toISOString() });
+    }
     return entry;
   }
   return request('/finance/cash-entries', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) });
@@ -374,6 +378,23 @@ export async function addPayablePayment(payableId: string, amount: number, note?
     return payable;
   }
   return request(`/finance/payables/${payableId}/payments`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ amount, note }) });
+}
+
+export async function listLoanPayables(): Promise<LoanPayable[]> {
+  if (!baseUrl) return demoLoanPayables;
+  return request('/finance/loan-payables');
+}
+
+export async function addLoanPayment(loanId: string, amount: number, note?: string, idempotencyKey = crypto.randomUUID()): Promise<LoanPayable> {
+  if (!baseUrl) {
+    const loan = demoLoanPayables.find(l => l.id === loanId);
+    if (!loan) throw new Error('Hutang pinjaman tidak ditemukan');
+    const capped = capPayment(payableOutstanding(loan), amount);
+    if (capped <= 0) throw new Error('Jumlah pembayaran tidak valid');
+    loan.payments.push({ id: crypto.randomUUID(), amount: capped, note, createdAt: new Date().toISOString() });
+    return loan;
+  }
+  return request(`/finance/loan-payables/${loanId}/payments`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ amount, note }) });
 }
 
 export async function listReceivables(): Promise<Receivable[]> {

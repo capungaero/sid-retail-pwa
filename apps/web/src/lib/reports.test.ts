@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
-import type { CashLedgerEntry, DailyMethodRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
+import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import type { CashLedgerEntry, DailyMethodRecap, LoanPayable, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
   const createdAt = '2026-08-13T10:00:00.000Z';
@@ -118,20 +118,37 @@ describe('dailyDrawnTotal', () => {
   });
 });
 
+describe('loanOutstandingDrawnTotal', () => {
+  const loans: LoanPayable[] = [
+    { id: 'l1', ledgerId: 'k1', amount: 200000, forDate: '2026-08-28', payments: [], createdAt: '2026-08-29T02:00:00.000Z' },
+    { id: 'l2', ledgerId: 'k2', amount: 100000, forDate: '2026-08-28', payments: [{ id: 'p1', amount: 40000, createdAt: '2026-08-29T03:00:00.000Z' }], createdAt: '2026-08-29T02:30:00.000Z' },
+    // Not counted: forDate outside the range.
+    { id: 'l3', ledgerId: 'k3', amount: 999999, forDate: '2026-08-01', payments: [], createdAt: '2026-08-02T00:00:00.000Z' },
+  ];
+  it('sums outstanding (amount minus payments) for loans whose forDate falls in range', () => {
+    expect(loanOutstandingDrawnTotal(loans, { start: '2026-08-28', end: '2026-08-28' })).toBe(260000);
+  });
+  it('a fully repaid loan stops counting toward the total', () => {
+    const repaid: LoanPayable[] = [{ ...loans[0], payments: [{ id: 'p2', amount: 200000, createdAt: '2026-08-30T00:00:00.000Z' }] }];
+    expect(loanOutstandingDrawnTotal(repaid, { start: '2026-08-28', end: '2026-08-28' })).toBe(0);
+  });
+});
+
 describe('reportedRevenueDrawnTotal', () => {
   const entries: CashLedgerEntry[] = [
     { id: 'k1', direction: 'out', amount: 50000, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-29T01:00:00.000Z' },
-    { id: 'k2', direction: 'out', amount: 30000, category: 'x', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T02:00:00.000Z' },
     // Not counted: wrong direction, wrong funding source, or outside the range.
     { id: 'k3', direction: 'in', amount: 99999, category: 'x', balanceAfter: 0, createdAt: '2026-08-29T03:00:00.000Z' },
     { id: 'k4', direction: 'out', amount: 99999, category: 'x', fundingSource: 'petty', balanceAfter: 0, createdAt: '2026-08-29T04:00:00.000Z' },
-    { id: 'k5', direction: 'out', amount: 99999, category: 'x', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-01T00:00:00.000Z' },
+    { id: 'k5', direction: 'out', amount: 99999, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-01T00:00:00.000Z' },
   ];
-  it('sums both "dari transaksi harian" and "dari kas pinjaman" draws within the range', () => {
-    expect(reportedRevenueDrawnTotal(entries, { start: '2026-08-29', end: '2026-08-29' })).toBe(80000);
+  // A loan drawn on 8/30 books forDate 8/29 - it nets into the 8/29 report row, not 8/30's.
+  const loans: LoanPayable[] = [{ id: 'l1', ledgerId: 'k2', amount: 30000, forDate: '2026-08-29', payments: [], createdAt: '2026-08-30T02:00:00.000Z' }];
+  it('sums both the daily draw and the loan\'s outstanding amount against its forDate, within range', () => {
+    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(80000);
   });
   it('narrows to one cashier own daily draws when given, still counting loan draws', () => {
-    expect(reportedRevenueDrawnTotal(entries, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(50000);
+    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(80000);
   });
 });
 

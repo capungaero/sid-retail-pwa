@@ -1,7 +1,9 @@
 <?php
 namespace App\Http\Controllers;
 use App\Repositories\LegacyCashLedgerRepository;
+use App\Repositories\LoanPayableRepository;
 use App\Support\Idempotency;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +21,7 @@ final class CashController
         }, $entries));
     }
 
-    public function store(Request $request, LegacyCashLedgerRepository $repo): JsonResponse
+    public function store(Request $request, LegacyCashLedgerRepository $repo, LoanPayableRepository $loanRepo): JsonResponse
     {
         $idempotencyKey = $request->header('Idempotency-Key');
         if ($existing = Idempotency::find($idempotencyKey)) return response()->json($existing, 201);
@@ -47,6 +49,12 @@ final class CashController
                 ]);
                 $entry['fundingSource'] = $data['fundingSource'];
                 $entry['fundingCashierName'] = $data['fundingSource'] === 'daily' ? $data['fundingCashierName'] : null;
+                if ($data['fundingSource'] === 'loan') {
+                    // Draws against the previous day's already-closed sales, not today's still-open
+                    // till - see LoanPayableRepository/migration comment.
+                    $forDate = Carbon::parse($entry['createdAt'])->subDay()->toDateString();
+                    $loanRepo->create($entry['id'], (float) $data['amount'], $forDate, $data['note'] ?? null);
+                }
             } else {
                 DB::table('app_cash_entry_funding')->insert([
                     'ledger_id' => $entry['id'], 'cash_source' => $data['cashSource'], 'created_at' => now(),

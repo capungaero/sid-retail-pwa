@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banknote, CircleDollarSign, PackageSearch, ReceiptText, RefreshCw, TrendingDown, TrendingUp, TriangleAlert, Wallet } from 'lucide-react';
-import { getDailyRecap, listCashEntries, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
+import { getDailyRecap, listCashEntries, listLoanPayables, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
 import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { money, number } from '../lib/money';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import { todayKey } from '../lib/date';
-import type { CashLedgerEntry, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord, StockMovement, StockMovementType, Supplier } from '../types';
+import type { CashLedgerEntry, DailyRecap, LoanPayable, Payable, Product, PurchaseOrder, Receivable, SaleRecord, StockMovement, StockMovementType, Supplier } from '../types';
 
 const TABS = [
   { key: 'daily-recap', label: 'Rekap harian' },
@@ -78,13 +78,14 @@ function SalesPurchaseTab() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [cashEntries, setCashEntries] = useState<CashLedgerEntry[]>([]);
+  const [loanPayables, setLoanPayables] = useState<LoanPayable[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [cashier, setCashier] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null);
-  const load = () => { setLoading(true); setError(''); Promise.all([listSales(), listPurchaseOrders(), listSuppliers(), listCashEntries()]).then(([s, p, sup, c]) => { setSales(s); setOrders(p); setSuppliers(sup); setCashEntries(c); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
+  const load = () => { setLoading(true); setError(''); Promise.all([listSales(), listPurchaseOrders(), listSuppliers(), listCashEntries(), listLoanPayables()]).then(([s, p, sup, c, l]) => { setSales(s); setOrders(p); setSuppliers(sup); setCashEntries(c); setLoanPayables(l); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const range = useMemo(() => ({ start: start || undefined, end: end || undefined }), [start, end]);
   const dateFilteredSales = useMemo(() => filterByRange(sales, range), [sales, range]);
@@ -94,8 +95,9 @@ function SalesPurchaseTab() {
   const rawSalesSummary = useMemo(() => summarizeSales(filteredSales), [filteredSales]);
   // "Dari transaksi harian" kas keluar draws net against Penjualan the same way they already net
   // Rekap harian's Total pendapatan - scoped to the same date range and, when one kasir is
-  // selected, to just that cashier's own draws.
-  const drawnTotal = useMemo(() => reportedRevenueDrawnTotal(cashEntries, range, cashier || undefined), [cashEntries, range, cashier]);
+  // selected, to just that cashier's own draws. "Dari kas pinjaman" draws net separately, against
+  // the PREVIOUS day's Penjualan (see reportedRevenueDrawnTotal/loanOutstandingDrawnTotal).
+  const drawnTotal = useMemo(() => reportedRevenueDrawnTotal(cashEntries, loanPayables, range, cashier || undefined), [cashEntries, loanPayables, range, cashier]);
   const salesSummary = useMemo(() => ({ ...rawSalesSummary, revenue: rawSalesSummary.revenue - drawnTotal }), [rawSalesSummary, drawnTotal]);
   const purchaseSummary = useMemo(() => summarizePurchases(filteredOrders), [filteredOrders]);
   // An exchange's replacement invoice never gets its own row - see rootSalesOnly. salesSummary

@@ -1,4 +1,4 @@
-import type { CashDirection, InstrumentStatus, Payable, Receivable } from '../types';
+import type { CashDirection, InstrumentStatus, Receivable } from '../types';
 
 // Computes the new running balance after applying a signed cash movement.
 export function nextCashBalance(previousBalance: number, direction: CashDirection, amount: number): number {
@@ -10,8 +10,8 @@ export function totalPaid(payments: { amount: number }[]): number {
   return payments.reduce((sum, p) => sum + p.amount, 0);
 }
 
-// Outstanding balance on a supplier payable (never negative).
-export function payableOutstanding(payable: Payable): number {
+// Outstanding balance on any amount+payments debt (supplier payable, loan payable, ...), never negative.
+export function payableOutstanding(payable: { amount: number; payments: { amount: number }[] }): number {
   return Math.max(0, payable.amount - totalPaid(payable.payments));
 }
 

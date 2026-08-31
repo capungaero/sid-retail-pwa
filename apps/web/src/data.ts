@@ -1,4 +1,4 @@
-import type { AttendanceEntry, AuditLogEntry, CashLedgerEntry, Customer, Employee, LeaveRequest, Payable, PaymentInstrument, PaymentMethod, PrinterConfig, Product, PurchaseOrder, Receivable, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount } from './types';
+import type { AttendanceEntry, AuditLogEntry, CashLedgerEntry, Customer, Employee, LeaveRequest, LoanPayable, Payable, PaymentInstrument, PaymentMethod, PrinterConfig, Product, PurchaseOrder, Receivable, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount } from './types';
 
 export const demoProducts: Product[] = [
   { id: '1', code: 'BRG-0001', barcode: '8991002101651', name: 'Air Mineral 600 ml', category: 'Minuman', stock: 84, minStock: 24, cost: 2100, active: true, units: [{ name: 'Botol', multiplier: 1, price: 3500 }, { name: 'Dus', multiplier: 24, price: 78000 }] },
@@ -50,6 +50,10 @@ export const demoPayables: Payable[] = [
   { id: 'hut-1', supplierId: 'sup-1', supplierName: 'PT Sumber Makmur', reference: 'PO-0001', amount: 375000, payments: [{ id: 'bayar-1', amount: 100000, createdAt: '2026-08-13T11:00:00.000Z' }], createdAt: '2026-08-12T10:05:00.000Z' },
   { id: 'hut-2', supplierId: 'sup-2', supplierName: 'CV Tirta Jaya', reference: 'PO-0002', amount: 500000, payments: [], createdAt: '2026-08-14T09:00:00.000Z' }
 ];
+
+// No loan draws in the seed data - kas keluar with sumber dana "Dari kas pinjaman" adds to this
+// via addCashEntry's demo-mode branch in lib/api.ts.
+export const demoLoanPayables: LoanPayable[] = [];
 
 export const demoReceivables: Receivable[] = [
   { id: 'piu-1', customerId: 'c-1', customerName: 'Siti Aminah', reference: 'INV-1001', amount: 150000, payments: [{ id: 'tagih-1', amount: 50000, createdAt: '2026-08-11T16:00:00.000Z' }], createdAt: '2026-08-09T13:00:00.000Z' },
