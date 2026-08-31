@@ -186,7 +186,7 @@ export async function exchangeSale(oldInvoice: string, payload: ExchangePayload)
       total: newLineValue, paid: newLineValue, change: 0, createdAt: new Date().toISOString(),
     });
     demoStockMovements.push({ id: crypto.randomUUID(), productId: payload.oldProductId, productName: oldProduct?.name ?? payload.oldProductId, type: 'sales-return', qty: payload.oldQty, reference: oldInvoice, note: payload.reason || `Tukar ke ${newProduct.name}`, createdAt: new Date().toISOString() });
-    oldSale.exchanges = [...(oldSale.exchanges ?? []), { oldProductId: payload.oldProductId, oldUnit: payload.oldUnit, oldQty: payload.oldQty, oldLineValue, newInvoice, newProductName: newProduct.name }];
+    oldSale.exchanges = [...(oldSale.exchanges ?? []), { oldProductId: payload.oldProductId, oldUnit: payload.oldUnit, oldQty: payload.oldQty, oldLineValue, newInvoice, newProductName: newProduct.name, newUnit: payload.newUnit, newQty: payload.newQty, newLineValue }];
 
     return { newInvoice, oldInvoice, total: newLineValue, diff };
   }

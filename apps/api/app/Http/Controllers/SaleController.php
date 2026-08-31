@@ -94,6 +94,9 @@ final class SaleController
                     'oldLineValue' => (float) $x->old_line_value,
                     'newInvoice' => (string) $x->new_invoice,
                     'newProductName' => (string) $x->new_product_name,
+                    'newUnit' => (string) $x->new_unit,
+                    'newQty' => (float) $x->new_qty,
+                    'newLineValue' => (float) $x->new_line_value,
                 ])->values(),
             ];
         })->values();

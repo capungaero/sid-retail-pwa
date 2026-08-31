@@ -58,7 +58,7 @@ const oldExchangedSale: SaleRecord = {
   id: 's1', invoice: 'INV-OLD', customerId: 'general', customerName: 'Umum',
   lines: [{ productId: 'sunlight-640', productName: 'Sunlight 640', unit: 'Pcs', qty: 1, price: 9000, discount: 0 }],
   total: 9000, paid: 9000, change: 0, createdAt: '2026-08-22T09:00:00.000Z',
-  exchanges: [{ oldProductId: 'sunlight-640', oldUnit: 'Pcs', oldQty: 1, oldLineValue: 9000, newInvoice: 'INV-NEW', newProductName: 'Sunlight 260' }],
+  exchanges: [{ oldProductId: 'sunlight-640', oldUnit: 'Pcs', oldQty: 1, oldLineValue: 9000, newInvoice: 'INV-NEW', newProductName: 'Sunlight 260', newUnit: 'Pcs', newQty: 1, newLineValue: 4500 }],
 };
 const newExchangeSale: SaleRecord = {
   id: 's2', invoice: 'INV-NEW', customerId: 'general', customerName: 'Umum',
