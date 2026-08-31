@@ -20,6 +20,18 @@ export function filterByRange<T extends { createdAt: string }>(items: T[], range
   return items.filter(item => withinRange(item.createdAt, range));
 }
 
+// Sum of "dari transaksi harian" kas keluar draws within a date range - the same netting
+// DailyReportController/buildDailyRecap already apply to Rekap harian's own totals, reused here
+// so Laporan > Penjualan & pembelian's "Penjualan" figure agrees with it. `cashierName`, when
+// given, narrows to just that cashier's own draws (matching fundingCashierName), so filtering
+// Laporan by one kasir also only nets what was actually taken from their day.
+export function dailyDrawnTotal(entries: CashLedgerEntry[], range: DateRange, cashierName?: string): number {
+  return entries
+    .filter(e => e.direction === 'out' && e.fundingSource === 'daily' && withinRange(e.createdAt, range))
+    .filter(e => !cashierName || e.fundingCashierName === cashierName)
+    .reduce((sum, e) => sum + e.amount, 0);
+}
+
 export type SalesSummary = { count: number; qtySold: number; revenue: number; discount: number };
 
 // Sum of a sale's own lines later swapped out via Tukar barang — the portion of its total that

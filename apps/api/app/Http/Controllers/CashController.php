@@ -29,12 +29,13 @@ final class CashController
             'amount' => 'required|numeric|gt:0',
             'category' => 'required|string|max:25',
             'note' => 'nullable|string|max:50',
-            'fundingSource' => 'required_if:direction,out|nullable|in:daily,loan',
-            // Only a 'daily' draw is attributed to one cashier's own takings - a 'loan' draw
-            // comes out of the overall pool, not any single cashier's day.
+            'fundingSource' => 'required_if:direction,out|nullable|in:daily,loan,cashier,petty,in_transit,bank',
+            // Only a 'daily' draw is attributed to one cashier's own takings - a 'loan' draw and
+            // the plain cash-pool tags (cashier/petty/in_transit/bank) aren't tied to any single
+            // cashier's day.
             'fundingCashierName' => 'required_if:fundingSource,daily|nullable|string|max:100',
             // Which cash pool a "kas masuk" entry landed in.
-            'cashSource' => 'required_if:direction,in|nullable|in:petty,in_transit,bank',
+            'cashSource' => 'required_if:direction,in|nullable|in:cashier,petty,in_transit,bank',
         ]);
         try {
             $entry = $repo->create($data['direction'], (float) $data['amount'], $data['category'], $data['note'] ?? null, $request->user()?->getKey(), $idempotencyKey);

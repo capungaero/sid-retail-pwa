@@ -47,12 +47,15 @@ export type StockMovementType = 'purchase-receipt' | 'purchase-return' | 'sales-
 export type StockMovement = { id: string; productId: string; productName: string; type: StockMovementType; qty: number; reference: string; note?: string; createdAt: string };
 
 export type CashDirection = 'in' | 'out';
-// Only meaningful for direction 'out': where the cash physically came from. 'daily' = taken
-// straight from that day's own sales takings. 'loan' = drawn against the overall sales cash
-// pool, to be paid back later (tracked here as a note, not auto-reconciled against anything).
-export type CashFundingSource = 'daily' | 'loan';
+// Only meaningful for direction 'out': where the cash physically came from. 'daily' and 'loan'
+// are the two that carry real behaviour - 'daily' nets against that day's own sales revenue (see
+// reports.ts's dailyDrawnTotal) and only 'daily' asks which cashier it was drawn from; 'loan' is
+// drawn against the overall sales cash pool, to be paid back later. The rest (cashier/petty/
+// in_transit/bank) are plain descriptive tags for which physical cash pool it came out of, with
+// no extra logic attached - same vocabulary as CashInSource, just for money going the other way.
+export type CashFundingSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank';
 // Only meaningful for direction 'in': which cash pool the money landed in.
-export type CashInSource = 'petty' | 'in_transit' | 'bank';
+export type CashInSource = 'cashier' | 'petty' | 'in_transit' | 'bank';
 export type CashLedgerEntry = { id: string; direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string; cashSource?: CashInSource; balanceAfter: number; createdAt: string };
 
 export type PayablePayment = { id: string; amount: number; note?: string; createdAt: string };

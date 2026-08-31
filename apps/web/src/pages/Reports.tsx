@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banknote, CircleDollarSign, PackageSearch, ReceiptText, RefreshCw, TrendingDown, TrendingUp, TriangleAlert, Wallet } from 'lucide-react';
 import { getDailyRecap, listCashEntries, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
-import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
+import { calculateProfitLoss, cashPosition, dailyDrawnTotal, filterByRange, lowStockProducts, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { money, number } from '../lib/money';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import { todayKey } from '../lib/date';
@@ -77,20 +77,26 @@ function SalesPurchaseTab() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [cashEntries, setCashEntries] = useState<CashLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [cashier, setCashier] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null);
-  const load = () => { setLoading(true); setError(''); Promise.all([listSales(), listPurchaseOrders(), listSuppliers()]).then(([s, p, sup]) => { setSales(s); setOrders(p); setSuppliers(sup); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
+  const load = () => { setLoading(true); setError(''); Promise.all([listSales(), listPurchaseOrders(), listSuppliers(), listCashEntries()]).then(([s, p, sup, c]) => { setSales(s); setOrders(p); setSuppliers(sup); setCashEntries(c); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const range = useMemo(() => ({ start: start || undefined, end: end || undefined }), [start, end]);
   const dateFilteredSales = useMemo(() => filterByRange(sales, range), [sales, range]);
   const cashierOptions = useMemo(() => Array.from(new Set(rootSalesOnly(dateFilteredSales).map(s => s.cashierName).filter((v): v is string => Boolean(v)))).sort(), [dateFilteredSales]);
   const filteredSales = useMemo(() => cashier ? dateFilteredSales.filter(s => s.cashierName === cashier) : dateFilteredSales, [dateFilteredSales, cashier]);
   const filteredOrders = useMemo(() => filterByRange(orders, range), [orders, range]);
-  const salesSummary = useMemo(() => summarizeSales(filteredSales), [filteredSales]);
+  const rawSalesSummary = useMemo(() => summarizeSales(filteredSales), [filteredSales]);
+  // "Dari transaksi harian" kas keluar draws net against Penjualan the same way they already net
+  // Rekap harian's Total pendapatan - scoped to the same date range and, when one kasir is
+  // selected, to just that cashier's own draws.
+  const drawnTotal = useMemo(() => dailyDrawnTotal(cashEntries, range, cashier || undefined), [cashEntries, range, cashier]);
+  const salesSummary = useMemo(() => ({ ...rawSalesSummary, revenue: rawSalesSummary.revenue - drawnTotal }), [rawSalesSummary, drawnTotal]);
   const purchaseSummary = useMemo(() => summarizePurchases(filteredOrders), [filteredOrders]);
   // An exchange's replacement invoice never gets its own row - see rootSalesOnly. salesSummary
   // above still reads the full filteredSales set, which already nets exchanges correctly.
