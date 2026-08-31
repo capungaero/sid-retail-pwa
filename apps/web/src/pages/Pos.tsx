@@ -248,7 +248,7 @@ function HistoryTab() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null); const [reprintingId, setReprintingId] = useState<string | null>(null);
   const [exchange, setExchange] = useState<{ invoice: string; line: SaleLine } | null>(null);
-  const [cashierQuery, setCashierQuery] = useState(''); const [methodFilter, setMethodFilter] = useState(''); const [exchangeFilter, setExchangeFilter] = useState(false); const [printingReport, setPrintingReport] = useState(false);
+  const [cashierQuery, setCashierQuery] = useState(''); const [methodFilter, setMethodFilter] = useState(''); const [adjustmentFilter, setAdjustmentFilter] = useState<'' | 'completed' | 'exchanged'>(''); const [printingReport, setPrintingReport] = useState(false);
   const { previewAndPrint, modal } = useReceiptPreview();
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false)); };
   useEffect(load, []);
@@ -266,11 +266,15 @@ function HistoryTab() {
   // Rows actually rendered/printed: an exchange's replacement invoice never gets its own row -
   // its whole history (what it became, kurang bayar/kembalian, settled or not) lives in the
   // original faktur's own Detail instead. Totals above still read the full visibleSales set,
-  // which already nets exchanges correctly regardless of which rows are shown. exchangeFilter is
+  // which already nets exchanges correctly regardless of which rows are shown. adjustmentFilter is
   // applied only here, after rootSalesOnly - a root always carries its own .exchanges once
   // swapped, so this is safe; applying it earlier would also drop each root's paired replacement
   // invoice from visibleSales before netSaleTotal could add its value back in, undercounting totals.
-  const tableRows = useMemo(() => rootSalesOnly(visibleSales).filter(s => !exchangeFilter || (s.exchanges && s.exchanges.length > 0)), [visibleSales, exchangeFilter]);
+  const tableRows = useMemo(() => rootSalesOnly(visibleSales).filter(s => {
+    if (adjustmentFilter === 'completed') return !s.exchanges || s.exchanges.length === 0;
+    if (adjustmentFilter === 'exchanged') return s.exchanges && s.exchanges.length > 0;
+    return true;
+  }), [visibleSales, adjustmentFilter]);
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
     try {
@@ -307,16 +311,17 @@ function HistoryTab() {
           {methodOptions.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <label className="history-filter-label" htmlFor="history-exchange-filter">Status penyesuaian</label>
-        <select id="history-exchange-filter" className="history-method-filter" value={exchangeFilter ? 'exchanged' : ''} onChange={e => setExchangeFilter(e.target.value === 'exchanged')}>
-          <option value="">Semua transaksi</option>
-          <option value="exchanged">Tukar</option>
+        <select id="history-exchange-filter" className="history-method-filter" value={adjustmentFilter} onChange={e => setAdjustmentFilter(e.target.value as typeof adjustmentFilter)}>
+          <option value="">Semua / All</option>
+          <option value="completed">Penjualan Bersih / Completed Sales</option>
+          <option value="exchanged">Tukar Barang / Exchanges</option>
         </select>
         <button className="button secondary" onClick={printReport} disabled={printingReport || !tableRows.length}><Printer /> {printingReport ? 'Menyiapkan…' : 'Cetak laporan (A4)'}</button>
         <button className="button ghost" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
       </div>
     </div>
     {error && <div className="notice error" role="alert">{error}</div>}
-    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !tableRows.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter || exchangeFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
+    {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !tableRows.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter || adjustmentFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
       {tableRows.map(s => <tr key={s.id}>
         <td className="mono">{s.invoice}{s.exchanges && s.exchanges.length > 0 && <span className="status" style={{ marginLeft: 6 }}>Ditukar</span>}</td>
         <td>{new Date(s.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
