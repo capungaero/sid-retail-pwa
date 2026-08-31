@@ -1,5 +1,5 @@
 import { payableOutstanding, receivableOutstanding } from './finance';
-import type { CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleExchangeInfo, SaleRecord } from '../types';
+import type { CashFundingSource, CashLedgerEntry, DailyMethodRecap, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleExchangeInfo, SaleRecord } from '../types';
 
 export type DateRange = { start?: string; end?: string };
 
@@ -30,6 +30,30 @@ export function dailyDrawnTotal(entries: CashLedgerEntry[], range: DateRange, ca
     .filter(e => e.direction === 'out' && e.fundingSource === 'daily' && withinRange(e.createdAt, range))
     .filter(e => !cashierName || e.fundingCashierName === cashierName)
     .reduce((sum, e) => sum + e.amount, 0);
+}
+
+// Same idea as dailyDrawnTotal, but also counts "dari kas pinjaman" draws. Used only by Laporan >
+// Penjualan & pembelian, which reports over a chosen range rather than one day - matching kas
+// pinjaman's own framing ("diambil dari kas penjualan keseluruhan"). Rekap harian and Ringkasan
+// stay 'daily'-only (dailyDrawnTotal): both are specifically "today", and a loan draw isn't today's
+// own revenue the way a 'daily' draw is.
+export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], range: DateRange, cashierName?: string): number {
+  return entries
+    .filter(e => e.direction === 'out' && (e.fundingSource === 'daily' || e.fundingSource === 'loan') && withinRange(e.createdAt, range))
+    .filter(e => !cashierName || e.fundingCashierName === cashierName)
+    .reduce((sum, e) => sum + e.amount, 0);
+}
+
+// Running balance for one physical cash pool tag (Kas Kasir / Kas Kecil / Kas Dalam Perjalanan /
+// Kas Bank) - every kas masuk tagged with it (cashSource) adds, every kas keluar tagged with it
+// (fundingSource) subtracts, across all recorded entries. Unlike the daily/loan revenue-netting
+// helpers above, this isn't date-scoped: it's a running pool balance, not a period report.
+export function cashPoolBalance(entries: CashLedgerEntry[], pool: CashFundingSource): number {
+  return entries.reduce((sum, e) => {
+    if (e.direction === 'in' && e.cashSource === pool) return sum + e.amount;
+    if (e.direction === 'out' && e.fundingSource === pool) return sum - e.amount;
+    return sum;
+  }, 0);
 }
 
 export type SalesSummary = { count: number; qtySold: number; revenue: number; discount: number };

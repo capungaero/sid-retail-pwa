@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
 import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
-import { cashierDailyCashTotals } from '../lib/reports';
+import { cashPoolBalance, cashierDailyCashTotals } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
@@ -80,11 +80,13 @@ function CashTab() {
       {error && <div className="notice error" role="alert">{error}</div>}
       {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : e.cashSource ? CASH_SOURCES.find(c => c.value === e.cashSource)?.label : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.balanceAfter)}</td></tr>)}</tbody></table></div>}
     </section>
-    {adding && <CashEntryModal onClose={() => setAdding(false)} onSaved={entry => { setEntries(current => [...current, entry]); setAdding(false); }} />}
+    {adding && <CashEntryModal entries={entries} onClose={() => setAdding(false)} onSaved={entry => { setEntries(current => [...current, entry]); setAdding(false); }} />}
   </>;
 }
 
-function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (entry: CashLedgerEntry) => void }) {
+const POOL_SOURCES: CashFundingSource[] = ['cashier', 'petty', 'in_transit', 'bank'];
+
+function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntry[]; onClose: () => void; onSaved: (entry: CashLedgerEntry) => void }) {
   const [direction, setDirection] = useState<CashDirection>('in'); const [amount, setAmount] = useState(0); const [category, setCategory] = useState(CASH_CATEGORIES[0]); const [note, setNote] = useState('');
   const [fundingSource, setFundingSource] = useState<CashFundingSource | null>(null);
   const [fundingCashierName, setFundingCashierName] = useState('');
@@ -126,8 +128,13 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
       <button type="button" role="tab" aria-selected={direction === 'out'} className={`tab-button ${direction === 'out' ? 'active' : ''}`} onClick={() => setDirection('out')}>Kas keluar</button>
     </div>
     <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{CASH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
-    {direction === 'in' && <label>Sumber dana<select value={cashSource ?? ''} onChange={e => setCashSource(e.target.value as CashInSource)}><option value="" disabled>Pilih sumber dana…</option>{CASH_SOURCES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>}
-    {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}</label>}
+    {direction === 'in' && <label>Sumber dana<select value={cashSource ?? ''} onChange={e => setCashSource(e.target.value as CashInSource)}><option value="" disabled>Pilih sumber dana…</option>{CASH_SOURCES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
+      {cashSource && <small className="muted">Saldo {CASH_SOURCES.find(c => c.value === cashSource)?.label} saat ini: {money.format(cashPoolBalance(entries, cashSource))}</small>}
+    </label>}
+    {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
+      {FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}
+      {fundingSource && POOL_SOURCES.includes(fundingSource) && <small className="muted">Saldo {FUNDING_SOURCES.find(f => f.value === fundingSource)?.label} saat ini: {money.format(cashPoolBalance(entries, fundingSource))}</small>}
+    </label>}
     {direction === 'out' && fundingSource === 'daily' && <label>Kasir
       <select value={fundingCashierName} onChange={e => setFundingCashierName(e.target.value)}>
         <option value="" disabled>Pilih kasir…</option>

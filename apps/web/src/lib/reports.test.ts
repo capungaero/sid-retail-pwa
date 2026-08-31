@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, lowStockProducts, netSaleTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
+import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, withinRange, withMethodPercentages } from './reports';
 import type { CashLedgerEntry, DailyMethodRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
@@ -115,6 +115,43 @@ describe('dailyDrawnTotal', () => {
   });
   it('narrows to one cashier own draws when given', () => {
     expect(dailyDrawnTotal(entries, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(50000);
+  });
+});
+
+describe('reportedRevenueDrawnTotal', () => {
+  const entries: CashLedgerEntry[] = [
+    { id: 'k1', direction: 'out', amount: 50000, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-29T01:00:00.000Z' },
+    { id: 'k2', direction: 'out', amount: 30000, category: 'x', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T02:00:00.000Z' },
+    // Not counted: wrong direction, wrong funding source, or outside the range.
+    { id: 'k3', direction: 'in', amount: 99999, category: 'x', balanceAfter: 0, createdAt: '2026-08-29T03:00:00.000Z' },
+    { id: 'k4', direction: 'out', amount: 99999, category: 'x', fundingSource: 'petty', balanceAfter: 0, createdAt: '2026-08-29T04:00:00.000Z' },
+    { id: 'k5', direction: 'out', amount: 99999, category: 'x', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-01T00:00:00.000Z' },
+  ];
+  it('sums both "dari transaksi harian" and "dari kas pinjaman" draws within the range', () => {
+    expect(reportedRevenueDrawnTotal(entries, { start: '2026-08-29', end: '2026-08-29' })).toBe(80000);
+  });
+  it('narrows to one cashier own daily draws when given, still counting loan draws', () => {
+    expect(reportedRevenueDrawnTotal(entries, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(50000);
+  });
+});
+
+describe('cashPoolBalance', () => {
+  const entries: CashLedgerEntry[] = [
+    { id: 'p1', direction: 'in', amount: 2000000, category: 'x', cashSource: 'petty', balanceAfter: 0, createdAt: '2026-08-01T00:00:00.000Z' },
+    { id: 'p2', direction: 'out', amount: 500000, category: 'x', fundingSource: 'petty', balanceAfter: 0, createdAt: '2026-08-02T00:00:00.000Z' },
+    // Not counted: different pool, or a non-pool funding source (daily/loan).
+    { id: 'p3', direction: 'in', amount: 999999, category: 'x', cashSource: 'bank', balanceAfter: 0, createdAt: '2026-08-03T00:00:00.000Z' },
+    { id: 'p4', direction: 'out', amount: 999999, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-04T00:00:00.000Z' },
+  ];
+  it('nets kas masuk against kas keluar tagged with the same pool, across all time', () => {
+    expect(cashPoolBalance(entries, 'petty')).toBe(1500000);
+  });
+  it('matches the example from the request: 2,000,000 in, then fully drawn back out', () => {
+    const drawn: CashLedgerEntry[] = [...entries, { id: 'p5', direction: 'out', amount: 1500000, category: 'x', fundingSource: 'petty', balanceAfter: 0, createdAt: '2026-08-05T00:00:00.000Z' }];
+    expect(cashPoolBalance(drawn, 'petty')).toBe(0);
+  });
+  it('returns 0 for a pool with no entries', () => {
+    expect(cashPoolBalance(entries, 'in_transit')).toBe(0);
   });
 });
 

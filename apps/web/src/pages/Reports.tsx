@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banknote, CircleDollarSign, PackageSearch, ReceiptText, RefreshCw, TrendingDown, TrendingUp, TriangleAlert, Wallet } from 'lucide-react';
 import { getDailyRecap, listCashEntries, listPayables, listProducts, listPurchaseOrders, listReceivables, listSales, listStockMovements, listSuppliers } from '../lib/api';
-import { calculateProfitLoss, cashPosition, dailyDrawnTotal, filterByRange, lowStockProducts, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
+import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { money, number } from '../lib/money';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
 import { todayKey } from '../lib/date';
@@ -95,7 +95,7 @@ function SalesPurchaseTab() {
   // "Dari transaksi harian" kas keluar draws net against Penjualan the same way they already net
   // Rekap harian's Total pendapatan - scoped to the same date range and, when one kasir is
   // selected, to just that cashier's own draws.
-  const drawnTotal = useMemo(() => dailyDrawnTotal(cashEntries, range, cashier || undefined), [cashEntries, range, cashier]);
+  const drawnTotal = useMemo(() => reportedRevenueDrawnTotal(cashEntries, range, cashier || undefined), [cashEntries, range, cashier]);
   const salesSummary = useMemo(() => ({ ...rawSalesSummary, revenue: rawSalesSummary.revenue - drawnTotal }), [rawSalesSummary, drawnTotal]);
   const purchaseSummary = useMemo(() => summarizePurchases(filteredOrders), [filteredOrders]);
   // An exchange's replacement invoice never gets its own row - see rootSalesOnly. salesSummary

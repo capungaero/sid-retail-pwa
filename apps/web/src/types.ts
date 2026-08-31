@@ -48,11 +48,12 @@ export type StockMovement = { id: string; productId: string; productName: string
 
 export type CashDirection = 'in' | 'out';
 // Only meaningful for direction 'out': where the cash physically came from. 'daily' and 'loan'
-// are the two that carry real behaviour - 'daily' nets against that day's own sales revenue (see
-// reports.ts's dailyDrawnTotal) and only 'daily' asks which cashier it was drawn from; 'loan' is
-// drawn against the overall sales cash pool, to be paid back later. The rest (cashier/petty/
-// in_transit/bank) are plain descriptive tags for which physical cash pool it came out of, with
-// no extra logic attached - same vocabulary as CashInSource, just for money going the other way.
+// both net against sales revenue - 'daily' against that day's own revenue (reports.ts's
+// dailyDrawnTotal, used by Rekap harian/Ringkasan) and 'loan' against the overall sales pool over
+// a range (reportedRevenueDrawnTotal, used by Laporan > Penjualan & pembelian only); only 'daily'
+// asks which cashier it was drawn from. The rest (cashier/petty/in_transit/bank) are running-
+// balance pool tags (see cashPoolBalance) - same vocabulary as CashInSource, just for money going
+// the other way; a kas keluar tagged with one subtracts from that pool's own kas-masuk balance.
 export type CashFundingSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank';
 // Only meaningful for direction 'in': which cash pool the money landed in.
 export type CashInSource = 'cashier' | 'petty' | 'in_transit' | 'bank';
