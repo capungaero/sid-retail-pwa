@@ -5,6 +5,7 @@ import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
 import { countDistinctTransactions, netSaleTotal } from '../lib/reports';
+import { todayKey as localTodayKey } from '../lib/date';
 import type { CartLine, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
@@ -231,7 +232,7 @@ function HistoryTab() {
   const { previewAndPrint, modal } = useReceiptPreview();
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false)); };
   useEffect(load, []);
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = localTodayKey();
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [sales, todayKey]);
   const methodOptions = useMemo(() => Array.from(new Set(todaySales.map(s => s.methodName).filter((v): v is string => Boolean(v)))).sort(), [todaySales]);
   const visibleSales = useMemo(() => {

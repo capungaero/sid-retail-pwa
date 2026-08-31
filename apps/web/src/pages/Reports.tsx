@@ -4,6 +4,7 @@ import { getDailyRecap, listCashEntries, listPayables, listProducts, listPurchas
 import { calculateProfitLoss, cashPosition, filterByRange, lowStockProducts, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { money, number } from '../lib/money';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
+import { todayKey } from '../lib/date';
 import type { CashLedgerEntry, DailyRecap, Payable, Product, PurchaseOrder, Receivable, SaleRecord, StockMovement, StockMovementType, Supplier } from '../types';
 
 const TABS = [
@@ -45,7 +46,7 @@ function DateRangeFilter({ start, end, setStart, setEnd, onReset, cashier, setCa
 }
 
 function DailyRecapTab() {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayKey());
   const [recap, setRecap] = useState<DailyRecap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,7 +56,7 @@ function DailyRecapTab() {
   return <>
     <section className="panel">
       <div className="panel-heading"><div><p className="eyebrow">Rekap per metode</p><h2>Rekap harian</h2></div><button className="button secondary" onClick={() => load(date)} disabled={loading}><RefreshCw /> Muat ulang</button></div>
-      <div className="form-grid"><label>Tanggal<input type="date" value={date} max={new Date().toISOString().slice(0, 10)} onChange={e => setDate(e.target.value)} /></label></div>
+      <div className="form-grid"><label>Tanggal<input type="date" value={date} max={todayKey()} onChange={e => setDate(e.target.value)} /></label></div>
     </section>
     {error && <div className="notice error" role="alert">{error}</div>}
     <section className="metric-grid" aria-label="Ringkasan hari terpilih">

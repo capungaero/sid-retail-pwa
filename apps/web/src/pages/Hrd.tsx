@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CirclePlus, RefreshCw, X } from 'lucide-react';
 import { listAttendanceEntries, listEmployees, listLeaveRequests, listShiftAssignments, listShiftDefs, saveAttendanceEntry, saveLeaveRequest, saveShiftAssignment, updateLeaveRequestStatus } from '../lib/api';
 import { monthlyRecap, workDurationMinutes } from '../lib/hrd';
+import { todayYearMonth } from '../lib/date';
 import type { AttendanceEntry, AttendanceStatus, Employee, LeaveRequest, LeaveStatus, LeaveType, ShiftAssignment, ShiftDef } from '../types';
 
 const TABS = [
@@ -193,7 +194,7 @@ function LeaveRequestModal({ employees, onClose, onSaved }: { employees: Employe
   </section></div>;
 }
 
-function currentYearMonth() { return new Date().toISOString().slice(0, 7); }
+function currentYearMonth() { return todayYearMonth(); }
 
 function RecapTab() {
   const [employees, setEmployees] = useState<Employee[]>([]);

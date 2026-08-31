@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { getDailyRecap, listProducts, listPurchaseOrders, listReceivables, listSales } from '../lib/api';
 import { lowStockProducts, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { receivableOutstanding } from '../lib/finance';
+import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
 import type { DailyRecap, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
@@ -42,7 +43,7 @@ export function Dashboard() {
   useEffect(() => { getDailyRecap().then(setRecap).catch(() => setRecap(null)); }, []);
   const recapRows = useMemo(() => recap ? withMethodPercentages(recap.byMethod, recap.totalRevenue) : [], [recap]);
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = localTodayKey();
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey), [sales, todayKey]);
   const summary = useMemo(() => summarizeSales(todaySales), [todaySales]);
   // recap (Laporan > Rekap harian's own math) also nets out same-day kas keluar entries funded

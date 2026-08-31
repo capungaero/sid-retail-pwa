@@ -3,6 +3,7 @@ import { applyReceipt, poStatusAfterReceipt, signedReturnQty } from './inventory
 import { canTransitionInstrument, capPayment, nextCashBalance, payableOutstanding, receivableOutstanding } from './finance';
 import { computeAttendanceStatus, findScheduledShift } from './hrd';
 import { buildDailyRecap } from './reports';
+import { todayKey } from './date';
 import { validateStoreProfile } from './settings';
 import { openReceiptPreviewPopup } from './print';
 import type { AttendanceEntry, AuditAction, AuditLogEntry, CashDirection, CashFundingSource, CashLedgerEntry, Customer, DailyRecap, Employee, ExchangePayload, ExchangeResult, InstrumentKind, InstrumentStatus, LeaveRequest, LeaveStatus, LeaveType, Payable, PaymentInstrument, PaymentMethod, PaymentMethodType, PaymentPayload, PermissionKey, PrinterConfig, Product, PurchaseOrder, Receivable, ReturnDoc, RolePermissions, SaleRecord, ShiftAssignment, ShiftDef, StockMovement, StoreProfile, Supplier, UserAccount, UserRole } from '../types';
@@ -256,7 +257,7 @@ export async function deletePaymentMethod(id: string): Promise<void> {
 
 // Per-payment-method revenue recap for one day (defaults to today).
 export async function getDailyRecap(date?: string): Promise<DailyRecap> {
-  const day = date ?? new Date().toISOString().slice(0, 10);
+  const day = date ?? todayKey();
   if (!baseUrl) {
     const cash = demoPaymentMethods.find(m => m.type === 'cash');
     return buildDailyRecap(day, demoSalesLog, demoSalePayments, demoCashEntries, cash ? { code: cash.code, name: cash.name } : undefined);

@@ -3,6 +3,7 @@ import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
 import { addCashEntry, addInstrument, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
 import { cashierDailyCashTotals } from '../lib/reports';
+import { todayKey as localTodayKey } from '../lib/date';
 import { money } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
 
@@ -85,7 +86,7 @@ function CashEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (e
     listSales().then(setSales).catch(() => setSales([]));
     getPaymentMethods().then(methods => setCashMethodName(methods.find(m => m.type === 'cash')?.name ?? null)).catch(() => setCashMethodName(null));
   }, []);
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = localTodayKey();
   const cashierTotals = useMemo(() => cashMethodName ? cashierDailyCashTotals(sales, todayKey, cashMethodName) : [], [sales, cashMethodName, todayKey]);
   // Generated once per modal open and reused across retries of the same submit attempt (e.g. a
   // client-side timeout after the server already succeeded), so a retry can't double-write.
