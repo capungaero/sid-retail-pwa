@@ -301,12 +301,12 @@ function HistoryTab() {
     <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{transactionCountToday} transaksi · {money.format(totalToday)}</span></div>
       <div className="history-tools">
         <label className="search-box history-search"><Search aria-hidden="true" /><span className="sr-only">Cari nama kasir</span><input value={cashierQuery} onChange={e => setCashierQuery(e.target.value)} placeholder="Cari kasir…" /></label>
-        <label className="sr-only" htmlFor="history-method-filter">Filter metode pembayaran</label>
+        <label className="history-filter-label" htmlFor="history-method-filter">Tipe transaksi</label>
         <select id="history-method-filter" className="history-method-filter" value={methodFilter} onChange={e => setMethodFilter(e.target.value)}>
           <option value="">Semua metode</option>
           {methodOptions.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
-        <label className="sr-only" htmlFor="history-exchange-filter">Filter barang ditukar</label>
+        <label className="history-filter-label" htmlFor="history-exchange-filter">Status penyesuaian</label>
         <select id="history-exchange-filter" className="history-method-filter" value={exchangeFilter ? 'exchanged' : ''} onChange={e => setExchangeFilter(e.target.value === 'exchanged')}>
           <option value="">Semua transaksi</option>
           <option value="exchanged">Tukar</option>
