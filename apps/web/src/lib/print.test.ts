@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dailySalesReportHtml, escapeHtml, receiptHtml } from './print';
+import { cashLedgerReportHtml, dailySalesReportHtml, escapeHtml, receiptHtml } from './print';
 import { demoCustomers, demoProducts } from '../data';
 import type { SaleRecord } from '../types';
 
@@ -49,5 +49,19 @@ describe('daily sales report', () => {
     const html = dailySalesReportHtml([sale], 'Selasa, 01 September 2026', {});
     expect(html).toContain('Tidak ada pengeluaran dari kas kasir hari ini');
     expect(html).toContain('TOTAL AKHIR: Rp 7.000');
+  });
+});
+
+describe('cash ledger report', () => {
+  it('lists masuk/keluar in separate columns and totals the difference', () => {
+    const html = cashLedgerReportHtml([
+      { createdAt: '2026-09-01T01:00:00.000Z', category: 'Setoran modal', sourceLabel: 'Kas Kecil', note: 'modal', direction: 'in', amount: 100000 },
+      { createdAt: '2026-09-01T02:00:00.000Z', category: 'Biaya operasional', sourceLabel: 'Kas Kasir (Admin)', note: 'bensin', direction: 'out', amount: 30000 },
+    ], { rangeLabel: '1/9/2026 s/d 1/9/2026' });
+    expect(html).toContain('Kas masuk');
+    expect(html).toContain('Kas keluar');
+    expect(html).toContain('bensin');
+    expect(html).toContain('Periode 1/9/2026 s/d 1/9/2026');
+    expect(html).toContain('70.000');
   });
 });

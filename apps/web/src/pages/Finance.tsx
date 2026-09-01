@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CirclePlus, RefreshCw, Search, X } from 'lucide-react';
-import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
+import { CirclePlus, Printer, RefreshCw, Search, X } from 'lucide-react';
+import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, getStoreProfile, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
-import { cashPoolBalance, cashierRemainingDailyCash, walletLedger } from '../lib/reports';
+import { cashPoolBalance, cashierRemainingDailyCash, walletLedger, withinRange } from '../lib/reports';
 import type { WalletLedgerEntry } from '../lib/reports';
+import { openBlankPreviewPopup, openCashLedgerReportPopup, type CashLedgerReportRow } from '../lib/print';
 import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
 import type { CashDirection, CashFundingSource, CashInSource, CashLedgerEntry, Customer, InstrumentKind, InstrumentStatus, LoanPayable, Payable, PaymentInstrument, Receivable, SaleRecord } from '../types';
@@ -82,9 +83,18 @@ const WALLET_FILTERS: { value: CashFundingSource | 'all'; label: string }[] = [
   { value: 'petty', label: 'Kas Kecil' },
 ];
 
+// The "Sumber dana" label for one ledger entry - kas keluar reads its fundingSource, kas masuk its
+// cashSource, both showing the cashier suffix when present. Shared by the table and the printout.
+function cashSourceLabel(e: CashLedgerEntry): string {
+  if (e.fundingSource) return `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label ?? e.fundingSource}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}`;
+  if (e.cashSource) return `${CASH_SOURCES.find(c => c.value === e.cashSource)?.label ?? e.cashSource}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}`;
+  return '—';
+}
+
 function CashTab() {
   const [entries, setEntries] = useState<CashLedgerEntry[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [adding, setAdding] = useState(false);
   const [wallet, setWallet] = useState<CashFundingSource | 'all'>('all');
+  const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [printing, setPrinting] = useState(false);
   const load = () => { setLoading(true); setError(''); listCashEntries().then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   // "Semua dompet" shows the whole store ledger with its own balanceAfter; picking one wallet
@@ -94,8 +104,24 @@ function CashTab() {
   const walletEntries = useMemo<WalletLedgerEntry[]>(() => wallet === 'all'
     ? entries.map(e => ({ ...e, walletBalanceAfter: e.balanceAfter }))
     : walletLedger(entries, wallet), [entries, wallet]);
-  const ordered = useMemo(() => [...walletEntries].reverse(), [walletEntries]);
-  const balance = ordered[0]?.walletBalanceAfter ?? 0;
+  // Date range only filters which rows are shown/printed - each row keeps its true cumulative
+  // balanceAfter (computed over all entries), so filtering never distorts the running balance.
+  const range = useMemo(() => ({ start: from || undefined, end: to || undefined }), [from, to]);
+  const rangeEntries = useMemo(() => walletEntries.filter(e => withinRange(e.createdAt, range)), [walletEntries, range]);
+  const ordered = useMemo(() => [...rangeEntries].reverse(), [rangeEntries]);
+  const balance = walletEntries.at(-1)?.walletBalanceAfter ?? 0;
+  function printCashReport() {
+    const popup = openBlankPreviewPopup();
+    setPrinting(true);
+    (async () => {
+      let storeName: string | undefined; try { storeName = (await getStoreProfile())?.name; } catch { storeName = undefined; }
+      const rows: CashLedgerReportRow[] = rangeEntries.map(e => ({ createdAt: e.createdAt, category: e.category, sourceLabel: cashSourceLabel(e), note: e.note, direction: e.direction, amount: e.amount }));
+      const rangeLabel = from || to ? `${from ? new Date(`${from}T00:00:00`).toLocaleDateString('id-ID') : '…'} s/d ${to ? new Date(`${to}T00:00:00`).toLocaleDateString('id-ID') : '…'}` : undefined;
+      try { openCashLedgerReportPopup(rows, { storeName, rangeLabel, walletLabel: wallet === 'all' ? undefined : WALLET_FILTERS.find(w => w.value === wallet)?.label, popup }); }
+      catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan kas'); }
+      finally { setPrinting(false); }
+    })();
+  }
   return <>
     <section className="panel flush">
       <div className="table-tools">
@@ -103,12 +129,18 @@ function CashTab() {
         <select aria-label="Filter dompet" value={wallet} onChange={e => setWallet(e.target.value as CashFundingSource | 'all')}>
           {WALLET_FILTERS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
         </select>
+        <label className="history-filter-label" htmlFor="cash-from">Dari</label>
+        <input id="cash-from" type="date" value={from} onChange={e => setFrom(e.target.value)} />
+        <label className="history-filter-label" htmlFor="cash-to">Sampai</label>
+        <input id="cash-to" type="date" value={to} onChange={e => setTo(e.target.value)} />
+        {(from || to) && <button className="button ghost" onClick={() => { setFrom(''); setTo(''); }}>Reset</button>}
         <span className="status success">{wallet === 'all' ? 'Saldo saat ini' : `Saldo ${WALLET_FILTERS.find(w => w.value === wallet)?.label}`}: {money.format(balance)}</span>
+        <button className="button secondary" onClick={printCashReport} disabled={printing || !rangeEntries.length}><Printer /> {printing ? 'Menyiapkan…' : 'Cetak laporan kas'}</button>
         <button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
         <button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Catat transaksi kas</button>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">Belum ada transaksi kas.</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{e.fundingSource ? `${FUNDING_SOURCES.find(f => f.value === e.fundingSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : e.cashSource ? `${CASH_SOURCES.find(c => c.value === e.cashSource)?.label}${e.fundingCashierName ? ` (${e.fundingCashierName})` : ''}` : '—'}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.walletBalanceAfter)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">{from || to ? 'Tidak ada transaksi kas di rentang tanggal ini.' : 'Belum ada transaksi kas.'}</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{cashSourceLabel(e)}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.walletBalanceAfter)}</td></tr>)}</tbody></table></div>}
     </section>
     {/* Reloads instead of appending locally: a "daily" kas keluar also books a second, linked kas
         masuk server-side (see CashController), so the response's one entry isn't the full picture. */}

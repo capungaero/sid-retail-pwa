@@ -170,6 +170,52 @@ export function openDailySalesReportPopup(sales: SaleRecord[], dateLabel: string
   win.document.close();
 }
 
+// A4 cash-book report - one row per kas masuk/keluar with separate Masuk/Keluar columns, then
+// totals (total masuk, total keluar, selisih). Rows come pre-shaped from the caller so this file
+// doesn't need the wallet-label maps that live in the Keuangan page.
+export type CashLedgerReportRow = { createdAt: string; category: string; sourceLabel: string; note?: string | null; direction: 'in' | 'out'; amount: number };
+export type CashLedgerReportOptions = { storeName?: string; rangeLabel?: string; walletLabel?: string };
+
+export function cashLedgerReportHtml(rows: CashLedgerReportRow[], opts: CashLedgerReportOptions = {}): string {
+  const { storeName, rangeLabel, walletLabel } = opts;
+  const name = storeName || (import.meta.env.VITE_STORE_NAME as string | undefined) || 'SID Retail';
+  const totalIn = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
+  const totalOut = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
+  const body = rows.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${escapeHtml(new Date(r.createdAt).toLocaleString('id-ID'))}</td><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.sourceLabel)}</td><td>${escapeHtml(r.note || '—')}</td><td class="num">${r.direction === 'in' ? money.format(r.amount) : ''}</td><td class="num">${r.direction === 'out' ? money.format(r.amount) : ''}</td></tr>`).join('');
+  const sub = [rangeLabel ? `Periode ${escapeHtml(rangeLabel)}` : 'Semua tanggal', walletLabel ? escapeHtml(walletLabel) : null, `${rows.length} transaksi`].filter(Boolean).join(' &middot; ');
+  return `<html><head><title>Laporan Kas</title><style>
+    @page{size:A4;margin:16mm}
+    body{font:12px/1.4 Arial,sans-serif;color:#111}
+    h1{font-size:18px;margin:0 0 2px}
+    .sub{color:#555;margin:0 0 18px;font-size:12px}
+    table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}
+    .c-no{width:4%}.c-time{width:16%}.c-cat{width:16%}.c-src{width:22%}.c-note{width:18%}.c-in{width:12%}.c-out{width:12%}
+    th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;word-wrap:break-word}
+    th{background:#f1f1f1}
+    .num{text-align:right}
+    tfoot td{font-weight:bold;background:#fafafa}
+    .grand{margin-top:10px;padding-top:10px;border-top:2px solid #111;text-align:right;font-size:14px;font-weight:bold}
+  </style></head><body>
+    <h1>${escapeHtml(name)}</h1>
+    <p class="sub">Laporan Kas &middot; ${sub}</p>
+    <table><colgroup><col class="c-no"><col class="c-time"><col class="c-cat"><col class="c-src"><col class="c-note"><col class="c-in"><col class="c-out"></colgroup>
+      <thead><tr><th>No</th><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th class="num">Kas masuk</th><th class="num">Kas keluar</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="7">Tidak ada transaksi kas.</td></tr>'}</tbody>
+      <tfoot><tr><td colspan="5" class="num">Total</td><td class="num">${money.format(totalIn)}</td><td class="num">${money.format(totalOut)}</td></tr></tfoot>
+    </table>
+    <p class="grand">SELISIH (masuk &minus; keluar): ${money.format(totalIn - totalOut)}</p>
+  </body></html>`;
+}
+
+export function openCashLedgerReportPopup(rows: CashLedgerReportRow[], opts: CashLedgerReportOptions & { popup?: Window | null } = {}) {
+  const { popup, ...reportOpts } = opts;
+  const win = popup ?? openBlankPreviewPopup();
+  if (!win) throw new Error('Popup pratinjau diblokir browser. Izinkan popup untuk situs ini lalu coba lagi.');
+  const printButton = '<div style="text-align:center;margin-top:12px"><button onclick="window.print()" style="font:600 13px sans-serif;padding:9px 18px;border-radius:6px;border:1px solid #93c5fd;background:#eff6ff;cursor:pointer">Cetak</button></div>';
+  win.document.write(cashLedgerReportHtml(rows, reportOpts).replace('</body>', `${printButton}</body>`));
+  win.document.close();
+}
+
 // Sends the receipt straight to a configured hardware print bridge (no in-app preview step
 // possible for this path — the bridge owns the actual printer). Used from the "Cetak" action
 // after the cashier has already reviewed the on-screen preview.
