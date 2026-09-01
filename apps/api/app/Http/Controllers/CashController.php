@@ -17,7 +17,15 @@ final class CashController
         $funding = DB::table('app_cash_entry_funding')->get()->keyBy('ledger_id');
         return response()->json(array_map(function ($e) use ($funding) {
             $f = $funding->get($e['id']);
-            return $e + ['fundingSource' => $f?->funding_source, 'fundingCashierName' => $f?->cashier_name, 'cashSource' => $f?->cash_source];
+            $e['fundingSource'] = $f?->funding_source;
+            $e['fundingCashierName'] = $f?->cashier_name;
+            $e['cashSource'] = $f?->cash_source;
+            // mutasikas only stores a DATE (tanggal), so the ledger's createdAt has no time-of-day
+            // and every row would render at WIB midnight (07.00). Every app-booked entry also writes
+            // an app_cash_entry_funding row stamped with a real timestamp at insert - use that as
+            // the actual clock time when present, falling back to the date for any legacy row.
+            if ($f && $f->created_at) $e['createdAt'] = (string) $f->created_at;
+            return $e;
         }, $entries));
     }
 
