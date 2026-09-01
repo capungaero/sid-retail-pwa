@@ -15,7 +15,20 @@ final class CashController
     {
         $entries = $repo->all();
         $funding = DB::table('app_cash_entry_funding')->get()->keyBy('ledger_id');
-        return response()->json(array_map(function ($e) use ($funding) {
+        // A loan is tracked as OUTSTANDING, not as cash income/expense: outstanding[$ledgerId] is how
+        // much of that draw is still unpaid.
+        $paidByLoan = DB::table('app_loan_payments')->groupBy('loan_id')->select('loan_id', DB::raw('SUM(amount) AS paid'))->pluck('paid', 'loan_id');
+        $outstanding = [];
+        foreach (DB::table('app_loan_payables')->get() as $l) {
+            $outstanding[$l->ledger_id] = max(0.0, (float) $l->amount - (float) ($paidByLoan[$l->id] ?? 0));
+        }
+        // Running balance is recomputed so a loan never inflates it: repayment rows (Pelunasan
+        // Pinjaman) are audit-only (0 effect - they stay visible but don't add cash), and a loan
+        // draw weighs on the balance only by its still-unpaid amount, so a fully repaid loan nets
+        // to zero and the balance = real cash minus outstanding loans, never above real revenue.
+        $balance = 0.0;
+        $out = [];
+        foreach ($entries as $e) {
             $f = $funding->get($e['id']);
             $e['fundingSource'] = $f?->funding_source;
             $e['fundingCashierName'] = $f?->cashier_name;
@@ -25,8 +38,19 @@ final class CashController
             // an app_cash_entry_funding row stamped with a real timestamp at insert - use that as
             // the actual clock time when present, falling back to the date for any legacy row.
             if ($f && $f->created_at) $e['createdAt'] = (string) $f->created_at;
-            return $e;
-        }, $entries));
+
+            if ($e['category'] === 'Pelunasan Pinjaman') {
+                $effect = 0.0;
+            } elseif (array_key_exists($e['id'], $outstanding)) {
+                $effect = -$outstanding[$e['id']];
+            } else {
+                $effect = $e['direction'] === 'in' ? (float) $e['amount'] : -(float) $e['amount'];
+            }
+            $balance += $effect;
+            $e['balanceAfter'] = $balance;
+            $out[] = $e;
+        }
+        return response()->json($out);
     }
 
     public function store(Request $request, LegacyCashLedgerRepository $repo, LoanPayableRepository $loanRepo): JsonResponse

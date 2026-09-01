@@ -65,16 +65,28 @@ export function cashPoolBalance(entries: CashLedgerEntry[], pool: CashFundingSou
 
 export type WalletLedgerEntry = CashLedgerEntry & { walletBalanceAfter: number };
 
+// One entry's effect on a running cash balance. A loan is tracked as OUTSTANDING, not as cash:
+// a repayment row (Pelunasan Pinjaman) is audit-only (0 - it stays visible but adds no cash), and a
+// loan draw (its id is a key in outstandingByLedger) weighs only by its still-unpaid amount, so a
+// fully repaid loan nets to zero and the balance never rises above real cash on a repayment. Any
+// other row is its plain signed amount. Pass no map to get the plain running behaviour.
+export function cashEntryEffect(e: CashLedgerEntry, outstandingByLedger?: Record<string, number>): number {
+  if (e.category === 'Pelunasan Pinjaman') return 0;
+  if (outstandingByLedger && Object.prototype.hasOwnProperty.call(outstandingByLedger, e.id)) return -outstandingByLedger[e.id];
+  return e.direction === 'in' ? e.amount : -e.amount;
+}
+
 // Entries tagged with one wallet (fundingSource for kas keluar, cashSource for kas masuk), each
 // carrying its OWN running balance scoped to just that wallet - not the whole store's
 // balanceAfter. Used to isolate e.g. "Kas Kasir (Transaksi Hari Ini)" from a large "Saldo
 // Akumulasi Toko" draw elsewhere, which would otherwise make the whole ledger's balanceAfter read
 // as a big, misleading negative number on what should be an unrelated wallet's own log.
-export function walletLedger(entries: CashLedgerEntry[], wallet: CashFundingSource): WalletLedgerEntry[] {
+// outstandingByLedger makes the Saldo Akumulasi Toko wallet loan-aware (see cashEntryEffect).
+export function walletLedger(entries: CashLedgerEntry[], wallet: CashFundingSource, outstandingByLedger?: Record<string, number>): WalletLedgerEntry[] {
   let running = 0;
   return entries
     .filter(e => e.fundingSource === wallet || e.cashSource === wallet)
-    .map(e => { running += e.direction === 'in' ? e.amount : -e.amount; return { ...e, walletBalanceAfter: running }; });
+    .map(e => { running += cashEntryEffect(e, outstandingByLedger); return { ...e, walletBalanceAfter: running }; });
 }
 
 export type SalesSummary = { count: number; qtySold: number; revenue: number; discount: number };

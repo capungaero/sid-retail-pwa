@@ -95,15 +95,19 @@ function CashTab() {
   const [entries, setEntries] = useState<CashLedgerEntry[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [adding, setAdding] = useState(false);
   const [wallet, setWallet] = useState<CashFundingSource | 'all'>('all');
   const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [printing, setPrinting] = useState(false);
-  const load = () => { setLoading(true); setError(''); listCashEntries().then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
+  const [loans, setLoans] = useState<LoanPayable[]>([]);
+  const load = () => { setLoading(true); setError(''); listCashEntries().then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); listLoanPayables().then(setLoans).catch(() => setLoans([])); };
   useEffect(load, []);
-  // "Semua dompet" shows the whole store ledger with its own balanceAfter; picking one wallet
-  // isolates just its entries with a running balance scoped to THAT wallet only - a big Saldo
-  // Akumulasi Toko draw elsewhere shouldn't make Kas Kasir's own log read as deeply negative.
-  // Normalized to WalletLedgerEntry either way so the table below never has to branch on shape.
+  // Per loan-draw ledger row, how much is still unpaid - makes the Saldo Akumulasi Toko wallet
+  // treat loans as outstanding (not cash), so a repayment never inflates its running balance.
+  const outstandingByLedger = useMemo(() => Object.fromEntries(loans.map(l => [l.ledgerId, payableOutstanding(l)])), [loans]);
+  // "Semua dompet" shows the whole store ledger with its own balanceAfter (already loan-adjusted
+  // server-side); picking one wallet isolates just its entries with a running balance scoped to
+  // THAT wallet only - a big Saldo Akumulasi Toko draw elsewhere shouldn't make Kas Kasir's own log
+  // read as deeply negative. Normalized to WalletLedgerEntry either way so the table never branches.
   const walletEntries = useMemo<WalletLedgerEntry[]>(() => wallet === 'all'
     ? entries.map(e => ({ ...e, walletBalanceAfter: e.balanceAfter }))
-    : walletLedger(entries, wallet), [entries, wallet]);
+    : walletLedger(entries, wallet, outstandingByLedger), [entries, wallet, outstandingByLedger]);
   // Date range only filters which rows are shown/printed - each row keeps its true cumulative
   // balanceAfter (computed over all entries), so filtering never distorts the running balance.
   const range = useMemo(() => ({ start: from || undefined, end: to || undefined }), [from, to]);

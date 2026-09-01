@@ -225,6 +225,21 @@ describe('walletLedger', () => {
     const petty = walletLedger(entries, 'petty');
     expect(petty.at(-1)?.walletBalanceAfter).toBe(300000);
   });
+  it('treats a loan as outstanding: a fully repaid draw nets to zero and the Pelunasan row adds nothing', () => {
+    const loanEntries: CashLedgerEntry[] = [
+      { id: 'd1', direction: 'out', amount: 1000000000, category: 'Lainnya', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-31T00:00:00.000Z' },
+      { id: 'p1', direction: 'in', amount: 1000000000, category: 'Pelunasan Pinjaman', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-09-01T00:00:00.000Z' },
+    ];
+    // d1 is a fully-repaid loan draw (outstanding 0), p1 is its Pelunasan (audit-only).
+    const ledger = walletLedger(loanEntries, 'loan', { d1: 0 });
+    expect(ledger.map(e => e.walletBalanceAfter)).toEqual([0, 0]);
+  });
+  it('an unpaid loan draw still weighs on the wallet by its outstanding amount', () => {
+    const loanEntries: CashLedgerEntry[] = [
+      { id: 'd2', direction: 'out', amount: 1000000000, category: 'Lainnya', fundingSource: 'loan', balanceAfter: 0, createdAt: '2026-08-31T00:00:00.000Z' },
+    ];
+    expect(walletLedger(loanEntries, 'loan', { d2: 400000000 }).at(-1)?.walletBalanceAfter).toBe(-400000000);
+  });
 });
 
 describe('countDistinctTransactions', () => {
