@@ -4,7 +4,7 @@ import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getSto
 import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import { countDistinctTransactions, exchangeHopsFor, netSaleTotal, rootSalesOnly } from '../lib/reports';
+import { countDistinctTransactions, exchangeHopsFor, netBasketTotal, netSaleTotal, rootSalesOnly } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import type { CartLine, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
@@ -304,8 +304,12 @@ function HistoryTab() {
     // fine without it, just falls back to the VITE_STORE_NAME default for the header, same as
     // Settings > Printer's "Tes cetak" does for the same reason.
     let profileName: string | undefined; try { profileName = (await getStoreProfile())?.name; } catch { profileName = undefined; }
+    // Current stock per product for the report's "Stok kini" column - pos:read gated, so a kasir
+    // token can fetch it; falls back to no stock column if it fails, rather than blocking the report.
+    let stockByProduct: Map<string, number> | undefined;
+    try { stockByProduct = new Map((await listProducts()).map(p => [p.id, p.stock])); } catch { stockByProduct = undefined; }
     try {
-      openDailySalesReportPopup(tableRows, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), profileName, popup);
+      openDailySalesReportPopup(tableRows, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), { storeName: profileName, allSales: sales, stockByProduct, popup });
     } catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan cetak'); }
     finally { setPrintingReport(false); }
   }
@@ -336,7 +340,7 @@ function HistoryTab() {
         <td>{s.cashierName || '—'}</td>
         <td>{s.customerName || 'Tanpa nama'}</td>
         <td>{s.methodName || '—'}</td>
-        <td className="numeric mono">{money.format(s.total)}</td>
+        <td className="numeric mono">{money.format(netBasketTotal(s, sales))}</td>
         <td><div className="row-actions"><button className="button ghost" onClick={() => setDetail(s)}>Detail</button><button className="button secondary" onClick={() => reprint(s)} disabled={reprintingId === s.id}><Printer /> {reprintingId === s.id ? '…' : 'Cetak ulang'}</button></div></td>
       </tr>)}
     </tbody></table></div>}

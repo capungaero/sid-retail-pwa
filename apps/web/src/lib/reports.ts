@@ -86,9 +86,21 @@ export function exchangedOutValue(sale: { exchanges?: SaleExchangeInfo[] }): num
 }
 
 // A sale's revenue contribution net of anything later exchanged away, so an old invoice's total
-// isn't double-counted against the replacement item's own new invoice.
+// isn't double-counted against the replacement item's own new invoice. Used when SUMMING across
+// every visible sale (roots + replacement invoices), where each side is counted on its own row.
 export function netSaleTotal(sale: { total: number; exchanges?: SaleExchangeInfo[] }): number {
   return sale.total - exchangedOutValue(sale);
+}
+
+// The customer's actual basket value for ONE root sale after every swap: the original total plus
+// each exchange hop's price difference (a pricier replacement adds, a cheaper one subtracts),
+// walking the whole chain across allSales. This is what a per-transaction "Total" should show -
+// unlike netSaleTotal, it already folds the replacement's value back into the same row, so it must
+// NOT be summed together with the replacement invoices' own netSaleTotal (that would double-count).
+// Summed over root sales only, it equals summing netSaleTotal over all sales (roots + replacements).
+export function netBasketTotal(sale: SaleRecord, allSales: SaleRecord[]): number {
+  return sale.lines.reduce((sum, l) =>
+    sum + exchangeHopsFor(sale, l.productId, l.unit, allSales).reduce((s, h) => s + h.diff, 0), sale.total);
 }
 
 // A Tukar barang exchange books its replacement item as its own new invoice - this is the set of

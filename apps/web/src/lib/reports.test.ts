@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashierRemainingDailyCash, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, walletLedger, withinRange, withMethodPercentages } from './reports';
+import { buildDailyRecap, calculateProfitLoss, cashierDailyCashTotals, cashierRemainingDailyCash, cashPoolBalance, cashPosition, countDistinctTransactions, dailyDrawnTotal, exchangedOutValue, exchangeHopsFor, filterByRange, loanOutstandingDrawnTotal, lowStockProducts, netBasketTotal, netSaleTotal, reportedRevenueDrawnTotal, rootSalesOnly, summarizePayablesBySupplier, summarizePurchases, summarizeReceivablesByCustomer, summarizeSales, UNTRACKED_METHOD_CODE, walletLedger, withinRange, withMethodPercentages } from './reports';
 import type { CashLedgerEntry, DailyMethodRecap, LoanPayable, Payable, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 describe('withinRange', () => {
@@ -74,6 +74,27 @@ describe('exchangedOutValue / netSaleTotal', () => {
   it('nets an exchanged line off the old invoice total', () => {
     expect(exchangedOutValue(oldExchangedSale)).toBe(9000);
     expect(netSaleTotal(oldExchangedSale)).toBe(0);
+  });
+});
+
+describe('netBasketTotal', () => {
+  const allSales = [oldExchangedSale, newExchangeSale];
+  it('is the plain total for a sale with no exchanges', () => {
+    expect(netBasketTotal(newExchangeSale, allSales)).toBe(4500);
+  });
+  it('folds the replacement value back into the one row: a cheaper swap lowers the basket', () => {
+    // Sunlight 640 (9.000) swapped for Sunlight 260 (4.500) → final basket 4.500, on one row.
+    expect(netBasketTotal(oldExchangedSale, allSales)).toBe(4500);
+  });
+  it('a pricier swap raises the basket above the original total', () => {
+    const root: SaleRecord = {
+      id: 'r', invoice: 'INV-R', customerId: 'general', customerName: 'Umum',
+      lines: [{ productId: 'a', productName: 'A', unit: 'Pcs', qty: 1, price: 40000, discount: 0 }, { productId: 'b', productName: 'B', unit: 'Pcs', qty: 1, price: 141000, discount: 0 }],
+      total: 181000, paid: 181000, change: 0, createdAt: '2026-09-01T01:00:00.000Z',
+      exchanges: [{ oldProductId: 'a', oldUnit: 'Pcs', oldQty: 1, oldLineValue: 40000, newInvoice: 'INV-R2', newProductName: 'C', newUnit: 'Pcs', newQty: 1, newLineValue: 46000 }],
+    };
+    const repl: SaleRecord = { id: 'r2', invoice: 'INV-R2', customerId: 'general', customerName: 'Umum', lines: [{ productId: 'c', productName: 'C', unit: 'Pcs', qty: 1, price: 46000, discount: 0 }], total: 46000, paid: 46000, change: 0, createdAt: '2026-09-01T01:05:00.000Z' };
+    expect(netBasketTotal(root, [root, repl])).toBe(187000);
   });
 });
 
