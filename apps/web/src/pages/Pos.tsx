@@ -325,12 +325,19 @@ function HistoryTab() {
     // fine without it, just falls back to the VITE_STORE_NAME default for the header, same as
     // Settings > Printer's "Tes cetak" does for the same reason.
     let profileName: string | undefined; try { profileName = (await getStoreProfile())?.name; } catch { profileName = undefined; }
-    // Current stock per product for the report's "Stok kini" column - pos:read gated, so a kasir
-    // token can fetch it; falls back to no stock column if it fails, rather than blocking the report.
+    // Current stock per product for the report's "Sisa stok" column - pos:read gated, so a kasir
+    // token can fetch it; falls back to '—' cells if it fails, rather than blocking the report.
     let stockByProduct: Map<string, number> | undefined;
     try { stockByProduct = new Map((await listProducts()).map(p => [p.id, p.stock])); } catch { stockByProduct = undefined; }
+    // Today's kas kasir withdrawals, scoped to the same cashier search as the table/cards, listed
+    // under the grand total and subtracted from it for the Total akhir.
+    const q = cashierQuery.trim().toLowerCase();
+    const expenses = cashEntries
+      .filter(e => e.direction === 'out' && e.fundingSource === 'daily' && e.createdAt.slice(0, 10) === todayKey)
+      .filter(e => !q || (e.fundingCashierName || '').toLowerCase().includes(q))
+      .map(e => ({ label: `${e.note || e.category}${e.fundingCashierName ? ` — ${e.fundingCashierName}` : ''}`, amount: e.amount }));
     try {
-      openDailySalesReportPopup(tableRows, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), { storeName: profileName, allSales: sales, stockByProduct, popup });
+      openDailySalesReportPopup(tableRows, new Date().toLocaleDateString('id-ID', { dateStyle: 'full' }), { storeName: profileName, allSales: sales, stockByProduct, expenses, popup });
     } catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan cetak'); }
     finally { setPrintingReport(false); }
   }

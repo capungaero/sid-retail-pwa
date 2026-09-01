@@ -53,30 +53,32 @@ export function openReceiptPreviewPopup(receipt: Receipt, profile?: StoreProfile
 
 // Options for the A4 daily report. `sales` (the first arg) is the list of ROOT fakturs to render;
 // `allSales` is the full set (roots + exchange-replacement invoices) needed to value each faktur
-// after its swaps via netBasketTotal - defaults to `sales` when not given. `stockByProduct` adds a
-// "Stok kini" column (current stock per product); omitted, the column is left off entirely.
-export type DailyReportOptions = { storeName?: string; allSales?: SaleRecord[]; stockByProduct?: Map<string, number> };
+// after its swaps via netBasketTotal - defaults to `sales` when not given. `stockByProduct` fills
+// the "Sisa stok" column (current stock per product; '—' for any product not in the map).
+// `expenses` are today's kas keluar drawn from "Kas Kasir (Transaksi Hari Ini)", listed under the
+// grand total and subtracted from it to give the Total akhir.
+export type DailyReportOptions = { storeName?: string; allSales?: SaleRecord[]; stockByProduct?: Map<string, number>; expenses?: { label: string; amount: number }[] };
 
 // A4 daily sales report — one section per faktur (oldest first, so it reads like a closing
-// report) with a No/Nama barang/Satuan/Qty/Harga (+ optional Stok kini) table, and one grand
-// total for the whole day at the bottom. The grand total is the sum of each faktur's net basket
-// value AFTER exchanges (netBasketTotal), matching the on-screen "Riwayat" total; the listed Harga
-// stays the price at sale time, and a small note explains how the two reconcile. Separate from
-// receiptHtml (58/80mm thermal roll) which prints a single sale.
+// report) with a No/Nama barang/Satuan/Qty/Metode bayar/Kasir/Harga/Sisa stok table. Below the
+// fakturs: TOTAL KESELURUHAN (sum of each faktur's net basket value after exchanges, matching the
+// on-screen "Riwayat" total), then a numbered breakdown of kas-kasir expenses, then TOTAL AKHIR =
+// keseluruhan minus those expenses. Separate from receiptHtml (58/80mm thermal roll).
 export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opts: DailyReportOptions = {}): string {
-  const { storeName, allSales = sales, stockByProduct } = opts;
-  const showStock = !!stockByProduct;
+  const { storeName, allSales = sales, stockByProduct, expenses = [] } = opts;
   const ordered = [...sales].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const name = storeName || (import.meta.env.VITE_STORE_NAME as string | undefined) || 'SID Retail';
   const anyExchange = ordered.some(s => (s.exchanges ?? []).length > 0);
+  const stockCellFor = (productId: string) => stockByProduct?.has(productId) ? number.format(stockByProduct.get(productId)!) : '—';
   const sections = ordered.map(sale => {
     const exchanges = sale.exchanges ?? [];
     const exchangeFor = (productId: string, unit: string) => exchanges.find(x => x.oldProductId === productId && x.oldUnit === unit);
+    const method = escapeHtml(sale.methodName || '—');
+    const cashier = escapeHtml(sale.cashierName || '—');
     const rows = sale.lines.map((l, i) => {
       const ex = exchangeFor(l.productId, l.unit);
       const note = ex ? `<br><span class="ex-note">&#8644; Ditukar &rarr; ${escapeHtml(ex.newProductName)} (faktur ${escapeHtml(ex.newInvoice)})</span>` : '';
-      const stockCell = showStock ? `<td class="num">${stockByProduct!.has(l.productId) ? number.format(stockByProduct!.get(l.productId)!) : '—'}</td>` : '';
-      return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}${note}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td class="num">${money.format(l.price)}</td>${stockCell}</tr>`;
+      return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}${note}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td>${method}</td><td>${cashier}</td><td class="num">${money.format(l.price)}</td><td class="num">${stockCellFor(l.productId)}</td></tr>`;
     }).join('');
     const banner = exchanges.length
       ? `<p class="faktur-flag">&#8644; Faktur ini sudah ditukar &mdash; barang pengganti tercatat di ${exchanges.map(x => `faktur ${escapeHtml(x.newInvoice)}`).join(', ')}.</p>`
@@ -88,25 +90,26 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opt
     const netLine = exchanges.length
       ? `<p class="faktur-net">Harga tercantum Rp${escapeHtml(number.format(sale.total))} · Penyesuaian tukar ${adjust >= 0 ? '+' : '&minus;'}Rp${escapeHtml(number.format(Math.abs(adjust)))} · <strong>Nilai akhir faktur Rp${escapeHtml(number.format(net))}</strong></p>`
       : '';
-    const cols = showStock
-      ? '<col class="col-no"><col class="col-name"><col class="col-unit"><col class="col-qty"><col class="col-price"><col class="col-stock">'
-      : '<col class="col-no"><col class="col-name"><col class="col-unit"><col class="col-qty"><col class="col-price">';
-    const head = showStock
-      ? '<tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th class="num">Harga</th><th class="num">Stok kini</th></tr>'
-      : '<tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th class="num">Harga</th></tr>';
+    const cols = '<col class="col-no"><col class="col-name"><col class="col-unit"><col class="col-qty"><col class="col-method"><col class="col-cashier"><col class="col-price"><col class="col-stock">';
+    const head = '<tr><th>No</th><th>Nama barang</th><th>Satuan</th><th class="num">Qty</th><th>Metode bayar</th><th>Kasir</th><th class="num">Harga</th><th class="num">Sisa stok</th></tr>';
     return `<section class="faktur"><p class="faktur-head">Faktur <strong>${escapeHtml(sale.invoice)}</strong> · ${new Date(sale.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · Kasir ${escapeHtml(sale.cashierName || '—')} · ${escapeHtml(sale.customerName || 'Pelanggan Umum')}</p>${banner}<table><colgroup>${cols}</colgroup><thead>${head}</thead><tbody>${rows}</tbody></table>${netLine}</section>`;
   }).join('');
   const grandTotal = ordered.reduce((sum, s) => sum + netBasketTotal(s, allSales), 0);
+  const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const finalTotal = grandTotal - totalExpense;
   const transactionCount = countDistinctTransactions(ordered);
-  // Small footnote so the reader can reconcile the grand total against the listed Harga - the two
-  // differ exactly by the exchange adjustments when any faktur was swapped.
+  const expenseList = expenses.length
+    ? `<ol class="ex-list">${expenses.map(e => `<li><span class="ex-label">${escapeHtml(e.label)}</span><span class="ex-amt">Rp${escapeHtml(number.format(e.amount))}</span></li>`).join('')}</ol>`
+    : '<p class="ex-empty">Tidak ada pengeluaran dari kas kasir hari ini.</p>';
+  // Small footnote so the reader can reconcile the totals against the listed Harga and the expenses.
   const noteLines = [
-    'Total keseluruhan = jumlah nilai akhir tiap faktur (kolom Harga sudah dijumlah, lalu disesuaikan bila ada tukar barang).',
+    'Total keseluruhan = jumlah nilai akhir tiap faktur (kolom Harga dijumlah, lalu disesuaikan bila ada tukar barang).',
     ...(anyExchange ? [
       'Untuk faktur yang ditukar: nilai barang lama diganti nilai barang penggantinya, jadi total bisa berbeda dari jumlah Harga yang tercantum (lihat baris "Nilai akhir faktur").',
       'Barang pengganti dicatat di fakturnya sendiri dan TIDAK dihitung ulang di sini, supaya tidak dobel.',
     ] : []),
-    ...(showStock ? ['"Stok kini" = sisa stok barang saat laporan ini dicetak.'] : []),
+    '"Sisa stok" = sisa stok barang saat laporan ini dicetak.',
+    'Total akhir = Total keseluruhan &minus; seluruh pengeluaran dari kas kasir hari ini.',
   ];
   const note = `<div class="note"><strong>Catatan:</strong><ul>${noteLines.map(n => `<li>${n}</li>`).join('')}</ul></div>`;
   return `<html><head><title>Laporan Transaksi Harian ${escapeHtml(dateLabel)}</title><style>
@@ -118,13 +121,21 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opt
     .faktur-head{font-size:11.5px;margin:0 0 4px;color:#333}
     .faktur-flag{font-size:11px;margin:0 0 6px;padding:4px 8px;background:#fff4e0;border:1px solid #e8c27a;border-radius:3px;color:#7a5300}
     .faktur-net{font-size:10.5px;margin:4px 0 0;text-align:right;color:#333}
-    table{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed}
-    .col-no{width:5%}.col-name{width:35%}.col-unit{width:12%}.col-qty{width:10%}.col-price{width:19%}.col-stock{width:19%}
+    table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}
+    .col-no{width:4%}.col-name{width:25%}.col-unit{width:9%}.col-qty{width:6%}.col-method{width:13%}.col-cashier{width:12%}.col-price{width:14%}.col-stock{width:17%}
     th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;word-wrap:break-word}
     th{background:#f1f1f1}
     .num{text-align:right}
     .ex-note{font-size:10px;color:#7a5300}
     .grand{margin-top:10px;padding-top:10px;border-top:2px solid #111;text-align:right;font-size:14px;font-weight:bold}
+    .grand.final{margin-top:8px;border-top-width:1px}
+    .expenses{margin-top:12px;font-size:11px}
+    .ex-head{margin:0 0 4px;font-weight:bold}
+    .ex-list{margin:0;padding-left:22px}
+    .ex-list li{margin:2px 0;display:flex;justify-content:space-between;gap:12px}
+    .ex-label{flex:1}
+    .ex-amt{white-space:nowrap;font-variant-numeric:tabular-nums}
+    .ex-empty{margin:0;color:#555}
     .note{margin-top:14px;font-size:10px;color:#555}
     .note ul{margin:4px 0 0;padding-left:16px}
     .note li{margin:2px 0}
@@ -133,6 +144,8 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opt
     <p class="sub">Laporan Transaksi Harian &middot; ${escapeHtml(dateLabel)} &middot; ${transactionCount} transaksi</p>
     ${sections || '<p>Tidak ada transaksi.</p>'}
     <p class="grand">TOTAL KESELURUHAN: ${money.format(grandTotal)}</p>
+    <div class="expenses"><p class="ex-head">Rincian pengeluaran dari kas kasir:</p>${expenseList}</div>
+    <p class="grand final">TOTAL AKHIR: ${money.format(finalTotal)}</p>
     ${note}
   </body></html>`;
 }
