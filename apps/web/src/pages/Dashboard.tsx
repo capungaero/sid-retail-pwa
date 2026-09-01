@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, CircleDollarSign, PackageCheck, ReceiptText, TriangleAlert, Wallet } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, CircleDollarSign, PackageCheck, TrendingDown, TriangleAlert, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getDailyRecap, listProducts, listPurchaseOrders, listReceivables, listSales } from '../lib/api';
-import { lowStockProducts, summarizeSales, withMethodPercentages } from '../lib/reports';
+import { getDailyRecap, listCashEntries, listProducts, listPurchaseOrders, listReceivables, listSales } from '../lib/api';
+import { dailyDrawnTotal, lowStockProducts, summarizeSales, withMethodPercentages } from '../lib/reports';
 import { receivableOutstanding } from '../lib/finance';
 import { todayKey as localTodayKey } from '../lib/date';
 import { money, number } from '../lib/money';
-import type { DailyRecap, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
+import type { CashLedgerEntry, DailyRecap, Product, PurchaseOrder, Receivable, SaleRecord } from '../types';
 
 const todayLabel = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
 
@@ -27,6 +27,7 @@ export function Dashboard() {
   // ke 0 setiap ganti tab supaya gak "nyangkut" di masa lalu waktu pindah rentang.
   const [chartOffset, setChartOffset] = useState(0);
   const [recap, setRecap] = useState<DailyRecap | null>(null);
+  const [cashEntries, setCashEntries] = useState<CashLedgerEntry[]>([]);
   function selectRange(range: typeof chartRange) { setChartRange(range); setChartOffset(0); }
   useEffect(() => {
     // Each fetch degrades to an empty list on its own instead of failing the whole page: a
@@ -35,8 +36,8 @@ export function Dashboard() {
     // still load fine, so a kasir gets an honestly-scoped dashboard instead of a page-wide
     // "Invalid ability provided." banner blocking everything, including what they can see.
     const safe = <T,>(p: Promise<T[]>): Promise<T[]> => p.catch(() => []);
-    Promise.all([safe(listSales()), safe(listProducts()), safe(listPurchaseOrders()), safe(listReceivables())])
-      .then(([s, p, o, r]) => { setSales(s); setProducts(p); setOrders(o); setReceivables(r); })
+    Promise.all([safe(listSales()), safe(listProducts()), safe(listPurchaseOrders()), safe(listReceivables()), safe(listCashEntries())])
+      .then(([s, p, o, r, c]) => { setSales(s); setProducts(p); setOrders(o); setReceivables(r); setCashEntries(c); })
       .finally(() => setLoading(false));
   }, []);
   // Today's revenue split per payment method (best-effort; failure just hides the card).
@@ -46,12 +47,15 @@ export function Dashboard() {
   const todayKey = localTodayKey();
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey), [sales, todayKey]);
   const summary = useMemo(() => summarizeSales(todaySales), [todaySales]);
-  // recap (Laporan > Rekap harian's own math) also nets out same-day kas keluar entries funded
-  // "dari transaksi harian" - prefer it here so this card and Rekap harian always agree. Falls
-  // back to the unnetted summary only while recap hasn't loaded yet (or failed to).
-  const todayRevenue = recap?.totalRevenue ?? summary.revenue;
+  // "Penjualan hari ini" shows GROSS sales (before any till withdrawal). The kas keluar draws
+  // funded "Kas Kasir (Transaksi Hari Ini)" are shown on their own as "Pengeluaran hari ini", and
+  // the remainder as "Sisa saldo" - which equals recap.totalRevenue (Rekap harian's netted
+  // figure, gross minus those same draws), so Sisa saldo and Rekap harian still agree.
+  const todayGrossRevenue = summary.revenue;
   const todayTransactionCount = recap?.transactionCount ?? summary.count;
-  const avgTicket = todayTransactionCount ? todayRevenue / todayTransactionCount : 0;
+  const todayExpense = useMemo(() => dailyDrawnTotal(cashEntries, { start: todayKey, end: todayKey }), [cashEntries, todayKey]);
+  const sisaSaldo = todayGrossRevenue - todayExpense;
+  const avgTicket = todayTransactionCount ? todayGrossRevenue / todayTransactionCount : 0;
   const low = useMemo(() => lowStockProducts(products), [products]);
   const negativeStock = products.filter(p => p.stock < 0).length;
   const pendingOrders = orders.filter(o => o.status !== 'received');
@@ -105,8 +109,9 @@ export function Dashboard() {
 
   return <div className="page"><div className="page-heading"><div><p className="eyebrow">{todayLabel}</p><h1>Ringkasan operasional</h1><p>Pantau aktivitas toko hari ini.</p></div><Link className="button primary" to="/pos">Buka kasir <ArrowRight /></Link></div>
     <section className="metric-grid" aria-label="Metrik hari ini">
-      <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Penjualan hari ini</span><strong>{loading ? '—' : money.format(todayRevenue)}</strong><small>{loading ? 'Memuat…' : `${number.format(todayTransactionCount)} transaksi`}</small></div></article>
-      <article className="metric"><span className="metric-icon green"><ReceiptText /></span><div><span>Rata-rata transaksi</span><strong>{loading ? '—' : money.format(avgTicket)}</strong><small>{number.format(summary.qtySold)} item terjual</small></div></article>
+      <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Penjualan hari ini</span><strong>{loading ? '—' : money.format(todayGrossRevenue)}</strong><small>{loading ? 'Memuat…' : `${number.format(todayTransactionCount)} transaksi`}</small></div></article>
+      <article className="metric"><span className="metric-icon red"><TrendingDown /></span><div><span>Pengeluaran hari ini</span><strong>{loading ? '—' : money.format(todayExpense)}</strong><small>Dari kas kasir hari ini</small></div></article>
+      <article className="metric"><span className="metric-icon green"><Wallet /></span><div><span>Sisa saldo hari ini</span><strong>{loading ? '—' : money.format(sisaSaldo)}</strong><small>Rata-rata {money.format(avgTicket)}/transaksi</small></div></article>
       <article className="metric"><span className="metric-icon amber"><TriangleAlert /></span><div><span>Stok perlu perhatian</span><strong>{loading ? '—' : number.format(low.length)} barang</strong><small>{number.format(negativeStock)} stok negatif</small></div></article>
       <article className="metric"><span className="metric-icon purple"><PackageCheck /></span><div><span>Pembelian tertunda</span><strong>{loading ? '—' : number.format(pendingOrders.length)} PO</strong><small>Belum diterima penuh</small></div></article>
     </section>
