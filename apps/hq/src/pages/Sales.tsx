@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Network, ReceiptText, Wallet } from 'lucide-react';
 import type { SaleRecord } from '@web/types';
 import { money } from '@web/lib/money';
 import { todayKey } from '@web/lib/date';
@@ -52,9 +53,9 @@ export function Sales() {
     </div>
 
     <div className="history-summary">
-      <div className="metric"><div><span>Total omzet (semua cabang)</span><strong>{money.format(totalRevenue)}</strong></div></div>
-      <div className="metric"><div><span>Total transaksi</span><strong>{totalCount}</strong></div></div>
-      <div className="metric"><div><span>Cabang terhubung</span><strong>{ok.length}/{branches.length}</strong></div></div>
+      <div className="metric"><span className="metric-icon blue"><Wallet aria-hidden="true" /></span><div><span>Total omzet (semua cabang)</span><strong>{money.format(totalRevenue)}</strong></div></div>
+      <div className="metric"><span className="metric-icon green"><ReceiptText aria-hidden="true" /></span><div><span>Total transaksi</span><strong>{totalCount}</strong></div></div>
+      <div className="metric"><span className="metric-icon amber"><Network aria-hidden="true" /></span><div><span>Cabang terhubung</span><strong>{ok.length}/{branches.length}</strong></div></div>
     </div>
 
     <div className="branch-grid">

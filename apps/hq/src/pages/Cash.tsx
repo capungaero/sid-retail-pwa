@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react';
 import type { CashLedgerEntry } from '@web/types';
 import { money } from '@web/lib/money';
 import { cashPosition, filterByRange } from '@web/lib/reports';
@@ -43,9 +44,9 @@ export function Cash() {
     {error && <div className="notice error" role="alert">{error}</div>}
 
     <div className="history-summary">
-      <div className="metric"><div><span>Kas masuk (periode)</span><strong>{money.format(rangePosition.totalIn)}</strong></div></div>
-      <div className="metric"><div><span>Kas keluar (periode)</span><strong>{money.format(rangePosition.totalOut)}</strong></div></div>
-      <div className="metric"><div><span>Saldo berjalan</span><strong>{money.format(overallBalance)}</strong></div></div>
+      <div className="metric"><span className="metric-icon green"><ArrowDownCircle aria-hidden="true" /></span><div><span>Kas masuk (periode)</span><strong>{money.format(rangePosition.totalIn)}</strong></div></div>
+      <div className="metric"><span className="metric-icon red"><ArrowUpCircle aria-hidden="true" /></span><div><span>Kas keluar (periode)</span><strong>{money.format(rangePosition.totalOut)}</strong></div></div>
+      <div className="metric"><span className="metric-icon blue"><Wallet aria-hidden="true" /></span><div><span>Saldo berjalan</span><strong>{money.format(overallBalance)}</strong></div></div>
     </div>
 
     <div className="panel flush"><div className="table-wrap"><table>
