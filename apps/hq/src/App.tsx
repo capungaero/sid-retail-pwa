@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { ArrowLeftRight, Boxes, Building2, CircleDollarSign, Gauge, LogOut, Menu, Network, ReceiptText, UserCog, UsersRound, X } from 'lucide-react';
+import { ArrowLeftRight, Boxes, CircleDollarSign, Gauge, LogOut, Menu, Network, ReceiptText, UserCog, UsersRound, X } from 'lucide-react';
+import { SidMark } from '@web/SidMark';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Sales } from './pages/Sales';
@@ -40,7 +41,7 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
 
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
-      <div className="brand"><div className="brand-mark compact"><Building2 aria-hidden="true" /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
+      <div className="brand"><div className="brand-mark compact"><SidMark /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
       <nav aria-label="Navigasi utama">{sections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><span className="nav-ico" style={{ background: `${item.color}22` }}><item.icon aria-hidden="true" style={{ width: 15, height: 15, color: item.color }} /></span><span>{item.label}</span></NavLink>)}</nav>
       <div className="sidebar-footer"><button className="nav-link logout" onClick={onLogout}><LogOut aria-hidden="true" />Keluar</button></div>
     </aside>

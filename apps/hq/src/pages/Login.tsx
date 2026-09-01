@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Building2, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
+import { CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
+import { SidMark } from '@web/SidMark';
 import { listBranches } from '../lib/branches';
 import { loginAllBranches, loginBranch } from '../lib/hqApi';
 import type { LoginResult } from '../lib/hqApi';
@@ -17,7 +18,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
   const okCount = results?.filter(r => r.ok).length ?? 0;
 
   return <main className="login-page"><section className="login-panel" aria-labelledby="login-title">
-    <div className="brand-mark"><Building2 aria-hidden="true" /><span>SID</span></div>
+    <div className="brand-mark"><SidMark /><span>SID</span></div>
     <p className="eyebrow">Kantor Pusat</p><h1 id="login-title">Masuk ke SID Pusat</h1>
     <p className="muted">Kredensial dicoba ke semua cabang terdaftar ({branches.length} cabang).</p>
     <form onSubmit={async e => {

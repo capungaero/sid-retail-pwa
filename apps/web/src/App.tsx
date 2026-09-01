@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { Boxes, Building2, ChevronLeft, CircleDollarSign, ClipboardList, Gauge, LogOut, Menu, PackageSearch, ReceiptText, RefreshCw, Settings, ShoppingCart, UsersRound, Wifi, WifiOff, X } from 'lucide-react';
+import { Boxes, ChevronLeft, CircleDollarSign, ClipboardList, Gauge, LogOut, Menu, PackageSearch, ReceiptText, RefreshCw, Settings, ShoppingCart, UsersRound, Wifi, WifiOff, X } from 'lucide-react';
+import { SidMark } from './SidMark';
 import { Dashboard } from './pages/Dashboard';
 import { Transactions } from './pages/Transactions';
 import { Products } from './pages/Products';
@@ -54,7 +55,7 @@ function Login({ onLogin }: { onLogin: (user?: AuthUser) => void }) {
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   return <main className="login-page"><section className="login-panel" aria-labelledby="login-title">
-    <div className="brand-mark"><Building2 aria-hidden="true" /><span>SID</span></div>
+    <div className="brand-mark"><SidMark /><span>SID</span></div>
     <p className="eyebrow">Sistem Informasi Dagang</p><h1 id="login-title">Masuk ke SID Retail</h1><p className="muted">Gunakan akun karyawan untuk memulai shift.</p>
     {isDemoMode && <div className="notice warning" role="status">Mode demo aktif — belum terhubung ke MariaDB.</div>}
     <form onSubmit={async e => {
@@ -110,7 +111,7 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
 
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
-      <div className="brand"><div className="brand-mark compact"><Building2 aria-hidden="true" /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
+      <div className="brand"><div className="brand-mark compact"><SidMark /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
       <nav aria-label="Navigasi utama">{visibleSections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><item.icon aria-hidden="true" /><span>{item.label}</span>{!item.ready && <span className="nav-status">Segera</span>}</NavLink>)}</nav>
       <div className="sidebar-footer"><span className={`connection ${online ? 'online' : 'offline'}`}>{online ? <Wifi aria-hidden="true" /> : <WifiOff aria-hidden="true" />}{online ? 'Terhubung' : 'Offline'}</span><button className="nav-link logout" onClick={onLogout}><LogOut aria-hidden="true" />Keluar</button></div>
     </aside>
