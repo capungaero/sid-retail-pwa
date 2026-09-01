@@ -165,13 +165,21 @@ function settlementNote(diff: number): string {
 // new invoice is never shown as its own row (see rootSalesOnly); its whole history lives here,
 // under the one faktur the cashier actually looks up.
 function SaleDetailModal({ sale, allSales, onClose, onReprint, onExchange, reprinting }: { sale: SaleRecord; allSales: SaleRecord[]; onClose: () => void; onReprint: () => void; onExchange: (invoice: string, line: SaleLine) => void; reprinting: boolean }) {
-  const hasExchanges = sale.lines.some(l => exchangeHopsFor(sale, l.productId, l.unit, allSales).length > 0);
+  // Walk each line's exchange chain once, reused for both the rendered rows and the netted totals.
+  const lineHops = sale.lines.map(l => ({ line: l, hops: exchangeHopsFor(sale, l.productId, l.unit, allSales) }));
+  const hasExchanges = lineHops.some(lh => lh.hops.length > 0);
+  // Every swap settles exactly its own price difference (kurang bayar collected / kembalian handed
+  // back) on top of the original checkout, so the customer's real basket after all swaps is the
+  // original total plus every hop's diff. Bayar shifts by the same amount (that extra cash was
+  // actually taken/returned at swap time); the original Kembalian stays as first handed over.
+  const exchangeDiff = lineHops.reduce((sum, lh) => sum + lh.hops.reduce((s, h) => s + h.diff, 0), 0);
+  const netTotal = sale.total + exchangeDiff;
+  const netPaid = sale.paid + exchangeDiff;
   return <Modal title={`Detail ${sale.invoice}`} onClose={onClose}>
     <p className="muted" style={{ marginTop: -8 }}>{new Date(sale.createdAt).toLocaleString('id-ID')} · {sale.customerName || 'Tanpa nama'}</p>
-    {hasExchanges && <div className="notice info" role="status"><ArrowLeftRight /> Transaksi ini sudah ditukar — lihat riwayat penukaran per barang di bawah.</div>}
+    {hasExchanges && <div className="notice info" role="status"><ArrowLeftRight /> Transaksi ini sudah ditukar — total di bawah sudah disesuaikan dengan penukaran.</div>}
     <div className="table-wrap"><table><thead><tr><th>Barang</th><th>Satuan</th><th className="numeric">Qty</th><th className="numeric">Harga</th><th className="numeric">Subtotal</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
-      {sale.lines.flatMap((l,i) => {
-        const hops = exchangeHopsFor(sale, l.productId, l.unit, allSales);
+      {lineHops.flatMap(({ line: l, hops }, i) => {
         const rows = [<tr key={i}><td>{l.productName}</td><td>{l.unit}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.price)}</td><td className="numeric mono">{money.format(l.qty*l.price-l.discount)}</td><td>{hops.length ? <span className="status">Ditukar</span> : <button className="button ghost" onClick={() => onExchange(sale.invoice, l)}><ArrowLeftRight /> Tukar</button>}</td></tr>];
         hops.forEach((h, hi) => {
           const isLast = hi === hops.length - 1;
@@ -182,7 +190,7 @@ function SaleDetailModal({ sale, allSales, onClose, onReprint, onExchange, repri
         return rows;
       })}
     </tbody></table></div>
-    <div className="summary"><div><span>Total</span><strong>{money.format(sale.total)}</strong></div><div><span>Bayar</span><strong>{money.format(sale.paid)}</strong></div><div className="grand-total"><span>Kembalian</span><strong>{money.format(sale.change)}</strong></div></div>
+    <div className="summary"><div><span>Total{hasExchanges ? ' (setelah tukar)' : ''}</span><strong>{money.format(netTotal)}</strong></div><div><span>Bayar</span><strong>{money.format(netPaid)}</strong></div><div className="grand-total"><span>Kembalian</span><strong>{money.format(sale.change)}</strong></div></div>
     <div className="modal-actions"><button className="button secondary" onClick={onClose}>Tutup</button><button className="button primary" data-autofocus="true" onClick={onReprint} disabled={reprinting}><Printer /> {reprinting ? 'Menyiapkan…' : 'Cetak ulang'}</button></div>
   </Modal>;
 }
