@@ -4,7 +4,7 @@ import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getSto
 import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import { countDistinctTransactions, dailyDrawnTotal, exchangeHopsFor, netBasketTotal, netSaleTotal, rootSalesOnly } from '../lib/reports';
+import { countDistinctTransactions, exchangeHopsFor, netBasketTotal, rootSalesOnly } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
 import type { CartLine, CashLedgerEntry, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
@@ -277,16 +277,9 @@ function HistoryTab() {
       .filter(s => !methodFilter || s.methodName === methodFilter);
   }, [todaySales, cashierQuery, methodFilter]);
   const transactionCountToday = useMemo(() => countDistinctTransactions(visibleSales), [visibleSales]);
-  // The three summary cards are day-level totals (not narrowed by the search/method filters, which
-  // only scope the table rows) so Sisa saldo = Pendapatan - Pengeluaran always reconciles, and they
-  // agree with Ringkasan's own cards. Pendapatan is gross sales (net of exchanges); Pengeluaran is
-  // today's kas keluar drawn from "Kas Kasir (Transaksi Hari Ini)"; Sisa saldo is the remainder.
-  const pendapatanHariIni = useMemo(() => todaySales.reduce((sum, s) => sum + netSaleTotal(s), 0), [todaySales]);
-  const pengeluaranHariIni = useMemo(() => dailyDrawnTotal(cashEntries, { start: todayKey, end: todayKey }), [cashEntries, todayKey]);
-  const sisaSaldo = pendapatanHariIni - pengeluaranHariIni;
   // Rows actually rendered/printed: an exchange's replacement invoice never gets its own row -
   // its whole history (what it became, kurang bayar/kembalian, settled or not) lives in the
-  // original faktur's own Detail instead. Totals above still read the full visibleSales set,
+  // original faktur's own Detail instead. The summary cards below read the same filtered set,
   // which already nets exchanges correctly regardless of which rows are shown. adjustmentFilter is
   // applied only here, after rootSalesOnly - a root always carries its own .exchanges once
   // swapped, so this is safe; applying it earlier would also drop each root's paired replacement
@@ -296,6 +289,21 @@ function HistoryTab() {
     if (adjustmentFilter === 'exchanged') return s.exchanges && s.exchanges.length > 0;
     return true;
   }), [visibleSales, adjustmentFilter]);
+  // Summary cards follow the same filters as the table. Pendapatan sums the shown rows' net basket
+  // value (netBasketTotal folds each swap's replacement back in, so it's right even when the method
+  // filter drops the replacement invoice from view). Pengeluaran is today's kas keluar drawn from
+  // "Kas Kasir (Transaksi Hari Ini)", narrowed to the searched cashier - the only filter dimension
+  // a cash withdrawal shares with a sale (it has no payment method or exchange status). Sisa saldo
+  // is the remainder, so the three always reconcile for whatever scope is selected.
+  const pendapatanHariIni = useMemo(() => tableRows.reduce((sum, s) => sum + netBasketTotal(s, sales), 0), [tableRows, sales]);
+  const pengeluaranHariIni = useMemo(() => {
+    const q = cashierQuery.trim().toLowerCase();
+    return cashEntries
+      .filter(e => e.direction === 'out' && e.fundingSource === 'daily' && e.createdAt.slice(0, 10) === todayKey)
+      .filter(e => !q || (e.fundingCashierName || '').toLowerCase().includes(q))
+      .reduce((sum, e) => sum + e.amount, 0);
+  }, [cashEntries, cashierQuery, todayKey]);
+  const sisaSaldo = pendapatanHariIni - pengeluaranHariIni;
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
     try {
