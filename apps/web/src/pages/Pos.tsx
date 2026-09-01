@@ -307,11 +307,21 @@ function HistoryTab() {
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
     try {
+      // Reprint the CURRENT basket, not the original sale: a line that was later swapped is
+      // replaced by the item the customer actually kept (its final replacement), and the old item
+      // drops off entirely - so the receipt and its total match what was really taken home.
+      const lines = sale.lines.map(l => {
+        const hops = exchangeHopsFor(sale, l.productId, l.unit, sales);
+        if (!hops.length) return { productName: l.productName, qty: l.qty, unitName: l.unit, unitPrice: l.price, discount: l.discount };
+        const final = hops[hops.length - 1];
+        return { productName: final.newProductName, qty: final.newQty, unitName: final.newUnit, unitPrice: final.newQty ? final.newLineValue / final.newQty : final.newLineValue, discount: 0 };
+      });
+      const total = netBasketTotal(sale, sales);
       await previewAndPrint({
         invoice: sale.invoice,
         customer: { id: sale.customerId || 'general', code: sale.customerId || 'UMUM', name: sale.customerName || 'Pelanggan Umum', tier: 'retail' },
-        lines: sale.lines.map(l => ({ productName: l.productName, qty: l.qty, unitName: l.unit, unitPrice: l.price, discount: l.discount })),
-        paid: sale.paid, total: sale.total
+        lines,
+        paid: sale.paid + (total - sale.total), total
       });
     } catch { /* preview/print was skipped or failed - cashier can just try again from the row */ }
     finally { setReprintingId(null); }

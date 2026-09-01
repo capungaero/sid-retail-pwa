@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { ArrowLeftRight, X } from 'lucide-react';
 import { money, number } from '../lib/money';
-import { exchangeHopsFor } from '../lib/reports';
+import { exchangeHopsFor, netBasketTotal } from '../lib/reports';
 import type { SaleRecord } from '../types';
 
 // One line's kurang-bayar/kembalian settlement, in words. Exchanges always settle the cash
@@ -34,15 +34,19 @@ export function SaleStockDetailModal({ sale, allSales, onClose }: { sale: SaleRe
     <div className="table-wrap"><table><thead><tr><th>Barang</th><th className="numeric">Stok awal</th><th className="numeric">Terjual</th><th className="numeric">Harga</th><th className="numeric">Sisa stok</th></tr></thead><tbody>
       {sale.lines.flatMap((l, i) => {
         const hops = exchangeHopsFor(sale, l.productId, l.unit, allSales);
-        const rows = [<tr key={i}><td>{l.productName}<br /><small className="muted">{l.unit}</small></td><td className="numeric mono">{l.stockBefore ?? '—'}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.qty * l.price - l.discount)}</td><td className="numeric mono">{l.stockAfter ?? '—'}</td></tr>];
+        // An exchanged-away item is shown in red and NOT counted in the total - only the final
+        // replacement the customer kept (black) is. Intermediate swaps in a chain are red too.
+        const swapped = hops.length > 0;
+        const rows = [<tr key={i} style={swapped ? { color: '#c0392b' } : undefined}><td>{l.productName}<br /><small className={swapped ? undefined : 'muted'}>{l.unit}{swapped ? ' · barang lama, ditukar (tidak dihitung)' : ''}</small></td><td className="numeric mono">{l.stockBefore ?? '—'}</td><td className="numeric mono">{number.format(l.qty)}</td><td className="numeric mono">{money.format(l.qty * l.price - l.discount)}</td><td className="numeric mono">{l.stockAfter ?? '—'}</td></tr>];
         hops.forEach((h, hi) => {
-          rows.push(<tr key={`${i}-ex-${hi}`} className="muted"><td><ArrowLeftRight size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />{h.newProductName}<br /><small className="muted">{h.newUnit}</small></td><td className="numeric mono">—</td><td className="numeric mono">{number.format(h.newQty)}</td><td className="numeric mono">{money.format(h.newLineValue)}</td><td className="numeric mono">—</td></tr>);
+          const isLast = hi === hops.length - 1;
+          rows.push(<tr key={`${i}-ex-${hi}`} style={isLast ? undefined : { color: '#c0392b' }}><td><ArrowLeftRight size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />{h.newProductName}<br /><small className={isLast ? 'muted' : undefined}>{h.newUnit}{isLast ? '' : ' · barang lama, ditukar (tidak dihitung)'}</small></td><td className="numeric mono">—</td><td className="numeric mono">{number.format(h.newQty)}</td><td className="numeric mono">{money.format(h.newLineValue)}</td><td className="numeric mono">—</td></tr>);
           rows.push(<tr key={`${i}-note-${hi}`} className="muted"><td colSpan={5} style={{ fontSize: '.85em', paddingTop: 0 }}>{h.oldProductName} → {h.newProductName}: {settlementNote(h.diff)}</td></tr>);
         });
         return rows;
       })}
     </tbody></table></div>
-    <div className="summary"><div className="grand-total"><span>Total penjualan</span><strong>{money.format(sale.total)}</strong></div></div>
+    <div className="summary"><div className="grand-total"><span>Total penjualan{hasExchanges ? ' (setelah tukar)' : ''}</span><strong>{money.format(netBasketTotal(sale, allSales))}</strong></div></div>
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Tutup</button></div>
   </section></div>;
 }
