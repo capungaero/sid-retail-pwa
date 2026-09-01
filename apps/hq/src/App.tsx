@@ -14,15 +14,17 @@ import { getStoredUser, logoutAllBranches } from './lib/hqApi';
 import { listBranches } from './lib/branches';
 import type { AuthUser } from './lib/hqApi';
 
+// Per-section icon accent — the "kaya warna" iOS look from the design mockup: each nav item's
+// glyph sits in a tinted badge in its own hue, rather than one monochrome column.
 const sections = [
-  { label: 'Ringkasan', path: '/dashboard', icon: Gauge },
-  { label: 'Penjualan', path: '/sales', icon: ReceiptText },
-  { label: 'Stok', path: '/stock', icon: Boxes },
-  { label: 'Operasi Stok', path: '/stock-ops', icon: ArrowLeftRight },
-  { label: 'Absensi', path: '/attendance', icon: UsersRound },
-  { label: 'Kas', path: '/cash', icon: CircleDollarSign },
-  { label: 'Akun Cabang', path: '/accounts', icon: UserCog },
-  { label: 'Kelola Cabang', path: '/branches', icon: Network }
+  { label: 'Ringkasan', path: '/dashboard', icon: Gauge, color: '#0b62fe' },
+  { label: 'Penjualan', path: '/sales', icon: ReceiptText, color: '#34c759' },
+  { label: 'Stok', path: '/stock', icon: Boxes, color: '#ff9500' },
+  { label: 'Operasi Stok', path: '/stock-ops', icon: ArrowLeftRight, color: '#af52de' },
+  { label: 'Absensi', path: '/attendance', icon: UsersRound, color: '#00c7be' },
+  { label: 'Kas', path: '/cash', icon: CircleDollarSign, color: '#ff2d55' },
+  { label: 'Akun Cabang', path: '/accounts', icon: UserCog, color: '#5856d6' },
+  { label: 'Kelola Cabang', path: '/branches', icon: Network, color: '#ff6b00' }
 ];
 
 function initials(name: string): string {
@@ -39,7 +41,7 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark compact"><Building2 aria-hidden="true" /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
-      <nav aria-label="Navigasi utama">{sections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><item.icon aria-hidden="true" /><span>{item.label}</span></NavLink>)}</nav>
+      <nav aria-label="Navigasi utama">{sections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><span className="nav-ico" style={{ background: `${item.color}22` }}><item.icon aria-hidden="true" style={{ width: 15, height: 15, color: item.color }} /></span><span>{item.label}</span></NavLink>)}</nav>
       <div className="sidebar-footer"><button className="nav-link logout" onClick={onLogout}><LogOut aria-hidden="true" />Keluar</button></div>
     </aside>
     {open && <button className="scrim" aria-label="Tutup menu" onClick={() => setOpen(false)} />}

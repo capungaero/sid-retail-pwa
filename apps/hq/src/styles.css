@@ -1,20 +1,22 @@
 /* HQ additions on top of the shared branch-app stylesheet. */
+.nav-ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none}
+.nav-ico svg{width:15px;height:15px}
 .branch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:12px}
-.branch-card{background:#fff;border:1px solid var(--border);border-radius:9px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.branch-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .branch-card header{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .branch-card h2{margin:0;font-size:1rem}
 .branch-card .branch-code{font:600 .72rem 'Fira Code',monospace;color:var(--muted-fg)}
 .branch-card .branch-total{font:600 1.3rem 'Fira Code',monospace;color:var(--primary)}
 .branch-card .branch-sub{font-size:.78rem;color:var(--muted-fg)}
 .branch-error{font-size:.8rem;color:var(--danger)}
-.status.pending{background:#fef3c7;color:#92400e}
-.status.offline{background:#fee2e2;color:#991b1b}
-.status.online{background:#d1fae5;color:#065f46}
+.status.pending{background:#fff7e6;color:#9a5b00}
+.status.offline{background:#fff1f0;color:#c1271d}
+.status.online{background:#eafaef;color:#16743a}
 .login-branch-list{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:8px}
-.login-branch-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:.85rem}
+.login-branch-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:12px;padding:8px 10px;font-size:.85rem}
 .login-branch-list .branch-error{flex:1;text-align:right}
 .branch-picker{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.branch-picker button{min-height:40px;border:1px solid var(--border);border-radius:7px;background:#fff;padding:0 14px;font-weight:600;color:var(--muted-fg)}
-.branch-picker button.active{border-color:var(--primary);background:#eff6ff;color:var(--primary)}
+.branch-picker button{min-height:40px;border:1px solid var(--border);border-radius:12px;background:#fff;padding:0 14px;font-weight:600;color:var(--muted-fg)}
+.branch-picker button.active{border-color:var(--primary);background:#f2f6ff;color:var(--primary)}
 .transfer-arrow{display:flex;align-items:center;justify-content:center;color:var(--muted-fg)}
-.pending-banner{background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:7px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pending-banner{background:#fff7e6;color:#9a5b00;border:1px solid #ffcf99;border-radius:12px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
