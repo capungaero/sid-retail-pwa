@@ -40,22 +40,24 @@ function ProductPicker({ query, setQuery, results, onPick }: { query: string; se
 }
 
 function PurchaseTab() {
-  const [pos, setPos] = useState<PurchaseOrder[]>([]); const [suppliers, setSuppliers] = useState<Supplier[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [editing, setEditing] = useState(false);
+  const [pos, setPos] = useState<PurchaseOrder[]>([]); const [suppliers, setSuppliers] = useState<Supplier[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  // null = closed, 'new' = create, a PurchaseOrder = edit that draft.
+  const [editing, setEditing] = useState<PurchaseOrder | 'new' | null>(null);
   const load = () => { setLoading(true); setError(''); Promise.all([listPurchaseOrders(), listSuppliers()]).then(([p, s]) => { setPos(p); setSuppliers(s); }).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); };
   useEffect(load, []);
   const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name ?? id;
   return <>
     <section className="panel flush">
-      <div className="table-tools"><h2>Daftar pembelian & PO</h2><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setEditing(true)}><CirclePlus /> PO baru</button></div>
+      <div className="table-tools"><h2>Daftar pembelian & PO</h2><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button><button className="button primary" onClick={() => setEditing('new')}><CirclePlus /> PO baru</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data pembelian…</div> : !pos.length ? <div className="empty-state">Belum ada PO atau pembelian.</div> : <div className="table-wrap"><table><thead><tr><th>Referensi</th><th>Pemasok</th><th className="numeric">Baris</th><th className="numeric">Total</th><th>Status</th><th>Dibuat</th></tr></thead><tbody>{pos.map(po => <tr key={po.id}><td className="mono">{po.reference}</td><td>{supplierName(po.supplierId)}</td><td className="numeric mono">{po.lines.length}</td><td className="numeric mono">{money.format(po.lines.reduce((sum, l) => sum + l.qty * l.cost, 0))}</td><td><span className={`status ${po.status === 'received' ? 'success' : ''}`}>{po.status === 'draft' ? 'Draft' : po.status === 'open' ? 'PO terbuka' : 'Diterima'}</span></td><td>{new Date(po.createdAt).toLocaleDateString('id-ID')}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data pembelian…</div> : !pos.length ? <div className="empty-state">Belum ada PO atau pembelian.</div> : <div className="table-wrap"><table><thead><tr><th>Referensi</th><th>Pemasok</th><th className="numeric">Baris</th><th className="numeric">Total</th><th>Status</th><th>Dibuat</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{pos.map(po => <tr key={po.id}><td className="mono">{po.reference}</td><td>{supplierName(po.supplierId)}</td><td className="numeric mono">{po.lines.length}</td><td className="numeric mono">{money.format(po.lines.reduce((sum, l) => sum + l.qty * l.cost, 0))}</td><td><span className={`status ${po.status === 'received' ? 'success' : ''}`}>{po.status === 'draft' ? 'Draft' : po.status === 'open' ? 'PO terbuka' : 'Diterima'}</span></td><td>{new Date(po.createdAt).toLocaleDateString('id-ID')}</td><td>{po.status === 'draft' ? <button className="button secondary" onClick={() => setEditing(po)}>Edit draft</button> : <span className="muted">—</span>}</td></tr>)}</tbody></table></div>}
     </section>
-    {editing && <PurchaseOrderModal suppliers={suppliers} onClose={() => setEditing(false)} onSaved={po => { setPos(current => [po, ...current]); setEditing(false); }} />}
+    {editing && <PurchaseOrderModal suppliers={suppliers} initial={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={po => { setPos(current => current.some(p => p.id === po.id) ? current.map(p => p.id === po.id ? po : p) : [po, ...current]); setEditing(null); }} />}
   </>;
 }
 
-function PurchaseOrderModal({ suppliers, onClose, onSaved }: { suppliers: Supplier[]; onClose: () => void; onSaved: (po: PurchaseOrder) => void }) {
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? ''); const [lines, setLines] = useState<PurchaseLine[]>([]);
+function PurchaseOrderModal({ suppliers, initial, onClose, onSaved }: { suppliers: Supplier[]; initial?: PurchaseOrder; onClose: () => void; onSaved: (po: PurchaseOrder) => void }) {
+  const [supplierId, setSupplierId] = useState(initial?.supplierId ?? suppliers[0]?.id ?? ''); const [lines, setLines] = useState<PurchaseLine[]>(initial?.lines ?? []);
   const [query, setQuery] = useState(''); const [results, setResults] = useState<Product[]>([]); const [picked, setPicked] = useState<Product | null>(null); const [qty, setQty] = useState(1); const [cost, setCost] = useState(0);
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false); const modalRef = useRef<HTMLElement>(null);
   // Stable across retries of one submit attempt, regenerated only after a successful save — see
@@ -75,9 +77,10 @@ function PurchaseOrderModal({ suppliers, onClose, onSaved }: { suppliers: Suppli
     if (!lines.length) return setError('Tambahkan minimal satu barang.');
     setSaving(true); setError('');
     try {
-      // No client-generated id: this is always a brand-new PO here (the modal has no edit-existing
-      // flow), so the server assigns the real legacy-consistent code on save — see savePurchaseOrder.
-      const po: PurchaseOrder = { id: '', reference: `PO-${Date.now().toString().slice(-6)}`, supplierId, status, lines, createdAt: new Date().toISOString() };
+      // Editing a draft carries its existing id/reference so save PUTs (updates) it in place; a new
+      // PO leaves id empty and the server assigns the real legacy-consistent code — see
+      // savePurchaseOrder / PurchaseOrderController.
+      const po: PurchaseOrder = { id: initial?.id ?? '', reference: initial?.reference ?? `PO-${Date.now().toString().slice(-6)}`, supplierId, status, lines, createdAt: initial?.createdAt ?? new Date().toISOString() };
       const saved = await savePurchaseOrder(po, idempotencyKeyRef.current);
       idempotencyKeyRef.current = crypto.randomUUID();
       onSaved(saved);
@@ -85,7 +88,7 @@ function PurchaseOrderModal({ suppliers, onClose, onSaved }: { suppliers: Suppli
   }
   const total = lines.reduce((sum, l) => sum + l.qty * l.cost, 0);
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal wide" role="dialog" aria-modal="true" aria-labelledby="po-title">
-    <div className="modal-heading"><div><p className="eyebrow">Pembelian</p><h2 id="po-title">Buat PO / pembelian baru</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
+    <div className="modal-heading"><div><p className="eyebrow">Pembelian</p><h2 id="po-title">{initial ? `Edit draft ${initial.reference}` : 'Buat PO / pembelian baru'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <label>Pemasok<select data-autofocus="true" value={supplierId} onChange={e => setSupplierId(e.target.value)}>{!suppliers.length && <option value="">Belum ada pemasok</option>}{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
     <div className="line-add-row">
       <ProductPicker query={query} setQuery={value => { setQuery(value); setPicked(null); }} results={results} onPick={pick} />
