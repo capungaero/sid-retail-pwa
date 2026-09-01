@@ -20,7 +20,7 @@ final class ProductController
     public function __construct(private readonly LegacyProductWriteRepository $writer) {}
 
     public function index(Request $request, LegacyProductRepository $products): JsonResponse
-    { return response()->json($products->search((string)$request->query('search',''))); }
+    { return response()->json($products->search((string)$request->query('search',''), $request->boolean('lowStock'))); }
     public function store(Request $request): JsonResponse
     { return $this->persist($request, null); }
     public function update(Request $request, string $id): JsonResponse

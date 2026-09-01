@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Storage;
 
 final class LegacyProductRepository
 {
-    public function search(string $search = ''): array
+    public function search(string $search = '', bool $lowStock = false): array
     {
         $table = config('sid.product.table'); $c = config('sid.product.columns');
         // Left join a NEW table (app_product_photos, no FK) keyed by kode to surface photoUrl —
@@ -17,6 +17,9 @@ final class LegacyProductRepository
             $like = '%'.addcslashes($search, '%_').'%' ;
             $q->where($c['name'], 'like', $like)->orWhere($c['code'], 'like', $like)->orWhere($c['barcode'], $search);
         });
+        // At-or-below configured minimum, worst first — mirrors reports.ts's lowStockProducts so
+        // the HQ dashboard gets the list server-side instead of paging the whole catalogue.
+        if ($lowStock) $query->whereColumn($c['stock'], '<=', $c['minStock'])->orderBy($c['stock']);
         return $query->limit(100)->get()->map(fn ($row) => $this->map((array) $row, $c))->all();
     }
 

@@ -15,6 +15,7 @@ use App\Http\Controllers\PrinterConfigController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReceivableController;
+use App\Http\Controllers\ReportSummaryController;
 use App\Http\Controllers\ReturnController;
 use App\Http\Controllers\RolePermissionController;
 use App\Http\Controllers\SaleController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\SettingsBackupController;
 use App\Http\Controllers\ShiftAssignmentController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StockController;
+use App\Http\Controllers\StockTransferController;
 use App\Http\Controllers\StoreProfileController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserAccountController;
@@ -42,6 +44,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/sales/{invoice}/exchange', SaleExchangeController::class)->middleware('ability:pos:write');
     Route::get('/payment-methods', [PaymentMethodController::class, 'index'])->middleware('ability:pos:read');
     Route::get('/reports/daily', DailyReportController::class)->middleware('ability:pos:read');
+    Route::get('/reports/summary', ReportSummaryController::class)->middleware('ability:pos:read');
     Route::get('/hrd/employees', EmployeeController::class)->middleware('ability:hrd:read');
     Route::get('/hrd/shifts', ShiftController::class)->middleware('ability:hrd:read');
     Route::get('/hrd/shift-assignments', [ShiftAssignmentController::class, 'index'])->middleware('ability:hrd:read');
@@ -62,6 +65,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/returns', ReturnController::class)->middleware('ability:inventory:write');
     Route::get('/stock-movements', [StockController::class, 'movements'])->middleware('ability:inventory:read');
     Route::post('/stock-adjustments', [StockController::class, 'adjust'])->middleware('ability:inventory:write');
+    Route::get('/stock-transfers', [StockTransferController::class, 'index'])->middleware('ability:inventory:read');
+    Route::post('/stock-transfers/out', [StockTransferController::class, 'out'])->middleware('ability:inventory:write');
+    Route::post('/stock-transfers/in', [StockTransferController::class, 'in'])->middleware('ability:inventory:write');
 
     Route::get('/settings/store-profile', [StoreProfileController::class, 'show'])->middleware('ability:settings:read');
     Route::put('/settings/store-profile', [StoreProfileController::class, 'update'])->middleware('ability:settings:write');
