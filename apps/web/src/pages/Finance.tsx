@@ -344,27 +344,60 @@ function LoanPayableTab() {
     <section className="panel flush">
       <div className="table-tools"><h2>Hutang pinjaman</h2><span className="status">Total sisa: {money.format(totalOutstanding)}</span><button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button></div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data hutang pinjaman…</div> : !loans.length ? <div className="empty-state">Belum ada hutang pinjaman.</div> : <div className="table-wrap"><table><thead><tr><th>Untuk tanggal</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Sudah dibayar</th><th className="numeric">Sisa</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{loans.map(l => { const outstanding = payableOutstanding(l); return <tr key={l.id}><td>{new Date(`${l.forDate}T00:00:00`).toLocaleDateString('id-ID')}</td><td>{l.note ?? '—'}</td><td className="numeric mono">{money.format(l.amount)}</td><td className="numeric mono">{money.format(l.amount - outstanding)}</td><td className="numeric mono">{money.format(outstanding)}</td><td>{outstanding > 0 ? <button className="button secondary" onClick={() => setPaying(l)}>Bayar</button> : <span className="status success">Lunas</span>}</td></tr>; })}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data hutang pinjaman…</div> : !loans.length ? <div className="empty-state">Belum ada hutang pinjaman.</div> : <div className="table-wrap"><table><thead><tr><th>Tanggal</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Sudah dibayar</th><th className="numeric">Sisa</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{loans.map(l => { const outstanding = payableOutstanding(l); return <tr key={l.id}><td>{new Date(l.createdAt).toLocaleDateString('id-ID')}</td><td>{l.note ?? '—'}</td><td className="numeric mono">{money.format(l.amount)}</td><td className="numeric mono">{money.format(l.amount - outstanding)}</td><td className="numeric mono">{money.format(outstanding)}</td><td>{outstanding > 0 ? <button className="button secondary" onClick={() => setPaying(l)}>Bayar</button> : <span className="status success">Lunas</span>}</td></tr>; })}</tbody></table></div>}
     </section>
     {paying && <LoanPaymentModal loan={paying} onClose={() => setPaying(null)} onSaved={updated => { setLoans(current => current.map(l => l.id === updated.id ? updated : l)); setPaying(null); }} />}
   </>;
 }
 
+// The wallets a loan repayment's money can come out of - each books a real kas keluar from that
+// wallet (see LoanPayableController). 'daily' (Kas Kasir) draws today's takings under a chosen
+// cashier; the rest draw down their own pool balance.
+const LOAN_PAY_SOURCES: { value: CashFundingSource; label: string }[] = [
+  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
+  { value: 'petty', label: 'Kas Kecil' },
+  { value: 'bank', label: 'Kas Bank' },
+  { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
+];
+
 function LoanPaymentModal({ loan, onClose, onSaved }: { loan: LoanPayable; onClose: () => void; onSaved: (loan: LoanPayable) => void }) {
   const outstanding = payableOutstanding(loan);
   const [amount, setAmount] = useState(outstanding); const [note, setNote] = useState(''); const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  const [fundingSource, setFundingSource] = useState<CashFundingSource | null>(null);
+  const [fundingCashierName, setFundingCashierName] = useState('');
+  const [sales, setSales] = useState<SaleRecord[]>([]); const [entries, setEntries] = useState<CashLedgerEntry[]>([]); const [cashMethodName, setCashMethodName] = useState<string | null>(null);
   const modalRef = useModalTrap(onClose);
+  useEffect(() => {
+    listSales().then(setSales).catch(() => setSales([]));
+    listCashEntries().then(setEntries).catch(() => setEntries([]));
+    getPaymentMethods().then(methods => setCashMethodName(methods.find(m => m.type === 'cash')?.name ?? null)).catch(() => setCashMethodName(null));
+  }, []);
+  const todayKey = localTodayKey();
+  const cashierTotals = useMemo(() => cashMethodName ? cashierRemainingDailyCash(sales, entries, todayKey, cashMethodName) : [], [sales, entries, cashMethodName, todayKey]);
   const idempotencyKey = useRef(crypto.randomUUID()).current;
   async function submit() {
     if (amount <= 0) return setError('Jumlah harus lebih dari 0.');
+    if (!fundingSource) return setError('Pilih sumber kas.');
+    if (fundingSource === 'daily' && !fundingCashierName) return setError('Pilih kasir.');
     setSaving(true); setError('');
-    try { onSaved(await addLoanPayment(loan.id, amount, note.trim() || undefined, idempotencyKey)); }
+    try { onSaved(await addLoanPayment(loan.id, amount, note.trim() || undefined, fundingSource, fundingSource === 'daily' ? fundingCashierName : undefined, idempotencyKey)); }
     catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan pembayaran'); setSaving(false); }
   }
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="loan-title">
-    <div className="modal-heading"><div><p className="eyebrow">Hutang pinjaman</p><h2 id="loan-title">Bayar hutang {new Date(`${loan.forDate}T00:00:00`).toLocaleDateString('id-ID')}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
+    <div className="modal-heading"><div><p className="eyebrow">Hutang pinjaman</p><h2 id="loan-title">Bayar hutang {new Date(loan.createdAt).toLocaleDateString('id-ID')}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <p>Sisa hutang: <strong>{money.format(outstanding)}</strong></p>
     <label>Jumlah dibayar<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount} onChange={e => setAmount(Math.max(0, Math.min(outstanding, Number(e.target.value))))} /></label>
+    <label>Sumber kas<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber kas…</option>{LOAN_PAY_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
+      {fundingSource && fundingSource !== 'daily' && <small className="muted">Saldo {LOAN_PAY_SOURCES.find(f => f.value === fundingSource)?.label} saat ini: {money.format(cashPoolBalance(entries, fundingSource))}</small>}
+      {fundingSource === 'daily' && <small className="muted">Diambil dari pendapatan tunai kasir hari ini</small>}
+    </label>
+    {fundingSource === 'daily' && <label>Kasir
+      <select value={fundingCashierName} onChange={e => setFundingCashierName(e.target.value)}>
+        <option value="" disabled>Pilih kasir…</option>
+        {cashierTotals.map(c => <option key={c.cashierName} value={c.cashierName}>{c.cashierName} — {money.format(c.amount)}</option>)}
+      </select>
+      {!cashierTotals.length && <small className="muted">Belum ada transaksi tunai hari ini per kasir.</small>}
+    </label>}
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan pembayaran'}</button></div>

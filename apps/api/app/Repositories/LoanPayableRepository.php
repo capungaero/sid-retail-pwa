@@ -30,9 +30,16 @@ final class LoanPayableRepository
     }
 
     // Same row-lock pattern as LegacyPayableRepository::addPayment - see that file's comment.
-    public function addPayment(string $loanId, float $amount, ?string $note, ?string $idempotencyKey = null): array
+    // Repaying a loan also books a real kas keluar from the chosen wallet ($fundingSource):
+    // 'daily' (Kas Kasir) draws today's takings under $cashierName - so paying a loan back with
+    // till money shows up as an expense today, exactly like a normal kas keluar; the other wallets
+    // (petty/bank/in_transit) draw down their own running pool balance. This is booked straight
+    // through the cash-ledger repo (NOT CashController::store), so it deliberately does NOT trigger
+    // the "daily draw books a matching kas masuk" pool-keeper - loan-repayment money genuinely
+    // leaves the till, it isn't just moved to another purpose within the shop.
+    public function addPayment(string $loanId, float $amount, ?string $note, string $fundingSource, ?string $cashierName, ?string $operator, LegacyCashLedgerRepository $cashRepo, ?string $idempotencyKey = null): array
     {
-        return DB::transaction(function () use ($loanId, $amount, $note, $idempotencyKey) {
+        return DB::transaction(function () use ($loanId, $amount, $note, $fundingSource, $cashierName, $operator, $cashRepo, $idempotencyKey) {
             $loan = DB::table('app_loan_payables')->where('id', $loanId)->lockForUpdate()->first();
             if (!$loan) throw ValidationException::withMessages(['loanId' => 'Hutang pinjaman tidak ditemukan']);
 
@@ -44,6 +51,13 @@ final class LoanPayableRepository
             DB::table('app_loan_payments')->insert([
                 'id' => (string) Str::uuid(), 'loan_id' => $loanId, 'amount' => $capped,
                 'note' => $note, 'created_at' => now(),
+            ]);
+
+            // Book the outflow from the chosen wallet for the amount actually applied ($capped).
+            $entry = $cashRepo->create('out', $capped, 'Bayar hutang pinjaman', mb_substr((string) ($note ?? 'Bayar hutang pinjaman'), 0, 50), $operator, null);
+            DB::table('app_cash_entry_funding')->insert([
+                'ledger_id' => $entry['id'], 'funding_source' => $fundingSource,
+                'cashier_name' => $fundingSource === 'daily' ? $cashierName : null, 'created_at' => now(),
             ]);
 
             $payments = DB::table('app_loan_payments')->where('loan_id', $loanId)->orderBy('created_at')->get();

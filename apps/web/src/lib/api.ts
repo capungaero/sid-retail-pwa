@@ -392,16 +392,19 @@ export async function listLoanPayables(): Promise<LoanPayable[]> {
   return request('/finance/loan-payables');
 }
 
-export async function addLoanPayment(loanId: string, amount: number, note?: string, idempotencyKey = crypto.randomUUID()): Promise<LoanPayable> {
+export async function addLoanPayment(loanId: string, amount: number, note: string | undefined, fundingSource: CashFundingSource, fundingCashierName: string | undefined, idempotencyKey = crypto.randomUUID()): Promise<LoanPayable> {
   if (!baseUrl) {
     const loan = demoLoanPayables.find(l => l.id === loanId);
     if (!loan) throw new Error('Hutang pinjaman tidak ditemukan');
     const capped = capPayment(payableOutstanding(loan), amount);
     if (capped <= 0) throw new Error('Jumlah pembayaran tidak valid');
     loan.payments.push({ id: crypto.randomUUID(), amount: capped, note, createdAt: new Date().toISOString() });
+    // Mirror the server: repaying books a kas keluar from the chosen wallet.
+    const previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
+    demoCashEntries.push({ id: crypto.randomUUID(), direction: 'out', amount: capped, category: 'Bayar hutang pinjaman', note, fundingSource, fundingCashierName: fundingSource === 'daily' ? fundingCashierName : undefined, balanceAfter: nextCashBalance(previousBalance, 'out', capped), createdAt: new Date().toISOString() });
     return loan;
   }
-  return request(`/finance/loan-payables/${loanId}/payments`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ amount, note }) });
+  return request(`/finance/loan-payables/${loanId}/payments`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ amount, note, fundingSource, fundingCashierName }) });
 }
 
 export async function listReceivables(): Promise<Receivable[]> {
