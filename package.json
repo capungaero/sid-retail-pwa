@@ -1,11 +1,15 @@
 {
   "name": "sid-retail-pwa",
   "private": true,
-  "workspaces": ["apps/web"],
+  "workspaces": ["apps/web", "apps/hq"],
   "scripts": {
     "dev": "npm run dev -w @sid/web",
     "build": "npm run build -w @sid/web",
     "typecheck": "npm run typecheck -w @sid/web",
-    "test": "npm run test -w @sid/web"
+    "test": "npm run test -w @sid/web",
+    "dev:hq": "npm run dev -w @sid/hq",
+    "build:hq": "npm run build -w @sid/hq",
+    "typecheck:hq": "npm run typecheck -w @sid/hq",
+    "test:hq": "npm run test -w @sid/hq"
   }
 }
