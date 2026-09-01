@@ -213,7 +213,7 @@ function PaymentMethodModal({ method, onClose, onSaved }: { method: PaymentMetho
       <label>Nama tampilan<input value={name} onChange={e => setName(e.target.value)} placeholder="Tunai / QRIS" /></label>
       <label>Jenis<select value={type} onChange={e => setType(e.target.value as PaymentMethodType)}>{METHOD_TYPES.map(t => <option key={t} value={t}>{METHOD_TYPE_LABEL[t]}</option>)}</select></label>
       <label>Kode kas legacy (opsional)<input value={legacyKasCode} onChange={e => setLegacyKasCode(e.target.value)} placeholder="Contoh: KT" /></label>
-      <label>Urutan<input type="number" min={0} value={sortOrder} onChange={e => setSortOrder(Number(e.target.value))} /></label>
+      <label>Urutan<input type="number" min={0} value={sortOrder || ''} onChange={e => setSortOrder(Number(e.target.value))} /></label>
       <label>Status<select value={active ? '1' : '0'} onChange={e => setActive(e.target.value === '1')}><option value="1">Aktif</option><option value="0">Nonaktif</option></select></label>
     </div>
     {error && <div className="notice error" role="alert">{error}</div>}

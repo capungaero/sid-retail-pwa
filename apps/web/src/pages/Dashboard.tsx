@@ -67,7 +67,9 @@ export function Dashboard() {
   const chart = useMemo(() => {
     if (chartRange === 'harian') {
       const day = new Date(); day.setDate(day.getDate() - chartOffset);
-      const dayKey = day.toISOString().slice(0, 10);
+      // Local-calendar key (not toISOString, which is UTC and shifts "today" back a day for the
+      // first ~7 hours of every WIB morning) so the chart's day matches the stored sale dates.
+      const dayKey = localTodayKey(day);
       const daySales = sales.filter(s => s.createdAt.slice(0, 10) === dayKey);
       const values = hours.map(h => daySales.filter(s => new Date(s.createdAt).getHours() === h).reduce((sum, s) => sum + s.total, 0));
       const rangeLabel = day.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -76,7 +78,7 @@ export function Dashboard() {
     if (chartRange === 'mingguan') {
       const end = new Date(); end.setDate(end.getDate() - chartOffset * 7);
       const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(end); d.setDate(d.getDate() - (6 - i)); return d; });
-      const values = days.map(d => { const key = d.toISOString().slice(0, 10); return sales.filter(s => s.createdAt.slice(0, 10) === key).reduce((sum, s) => sum + s.total, 0); });
+      const values = days.map(d => { const key = localTodayKey(d); return sales.filter(s => s.createdAt.slice(0, 10) === key).reduce((sum, s) => sum + s.total, 0); });
       const rangeLabel = `${days[0].toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} – ${days[6].toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
       return { labels: days.map(d => d.toLocaleDateString('id-ID', { weekday: 'short' })), values, empty: values.every(v => v === 0), rangeLabel };
     }

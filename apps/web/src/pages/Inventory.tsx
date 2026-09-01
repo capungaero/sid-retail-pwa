@@ -89,8 +89,8 @@ function PurchaseOrderModal({ suppliers, onClose, onSaved }: { suppliers: Suppli
     <label>Pemasok<select data-autofocus="true" value={supplierId} onChange={e => setSupplierId(e.target.value)}>{!suppliers.length && <option value="">Belum ada pemasok</option>}{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
     <div className="line-add-row">
       <ProductPicker query={query} setQuery={value => { setQuery(value); setPicked(null); }} results={results} onPick={pick} />
-      <input type="number" min="1" step="1" value={qty} onChange={e => setQty(Number(e.target.value))} aria-label="Jumlah" />
-      <input type="number" min="0" value={cost} onChange={e => setCost(Number(e.target.value))} aria-label="Harga beli" onKeyDown={e => e.key === 'Enter' && addLine()} />
+      <input type="number" min="1" step="1" value={qty || ''} onChange={e => setQty(Number(e.target.value))} aria-label="Jumlah" />
+      <input type="number" min="0" value={cost || ''} onChange={e => setCost(Number(e.target.value))} aria-label="Harga beli" onKeyDown={e => e.key === 'Enter' && addLine()} />
       <button type="button" className="button secondary" onClick={addLine}><CirclePlus /> Tambah</button>
     </div>
     {error && <div className="notice error" role="alert">{error}</div>}
@@ -134,7 +134,7 @@ function ReceiptTab() {
     </section>
     {selected && <section className="panel">
       <div className="panel-heading"><div><p className="eyebrow">Penerimaan barang</p><h2>{selected.reference}</h2></div></div>
-      <div className="table-wrap"><table><thead><tr><th>Barang</th><th className="numeric">Dipesan</th><th className="numeric">Sudah diterima</th><th className="numeric">Terima sekarang</th></tr></thead><tbody>{selected.lines.map(l => <tr key={l.productId}><td>{l.productName}<small>{l.unit}</small></td><td className="numeric mono">{l.qty}</td><td className="numeric mono">{l.receivedQty}</td><td className="numeric"><input type="number" min="0" max={l.qty - l.receivedQty} value={receiveQty[l.productId] ?? 0} onChange={e => setReceiveQty(c => ({ ...c, [l.productId]: Math.max(0, Math.min(l.qty - l.receivedQty, Number(e.target.value))) }))} aria-label={`Terima ${l.productName}`} /></td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Barang</th><th className="numeric">Dipesan</th><th className="numeric">Sudah diterima</th><th className="numeric">Terima sekarang</th></tr></thead><tbody>{selected.lines.map(l => <tr key={l.productId}><td>{l.productName}<small>{l.unit}</small></td><td className="numeric mono">{l.qty}</td><td className="numeric mono">{l.receivedQty}</td><td className="numeric"><input type="number" min="0" max={l.qty - l.receivedQty} value={receiveQty[l.productId] || ''} onChange={e => setReceiveQty(c => ({ ...c, [l.productId]: Math.max(0, Math.min(l.qty - l.receivedQty, Number(e.target.value))) }))} aria-label={`Terima ${l.productName}`} /></td></tr>)}</tbody></table></div>
       {error && <div className="notice error" role="alert">{error}</div>}
       <div className="modal-actions"><button className="button secondary" onClick={() => setSelectedId('')} disabled={saving}>Batal</button><button className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan penerimaan'}</button></div>
     </section>}
@@ -184,8 +184,8 @@ function ReturnTab() {
       <label>Alasan retur<input value={reason} onChange={e => setReason(e.target.value)} placeholder="Contoh: barang rusak, salah kirim" /></label>
       <div className="line-add-row">
         <ProductPicker query={query} setQuery={value => { setQuery(value); setPicked(null); }} results={results} onPick={pick} />
-        <input type="number" min="1" step="1" value={qty} onChange={e => setQty(Number(e.target.value))} aria-label="Jumlah" />
-        <input type="number" min="0" value={price} onChange={e => setPrice(Number(e.target.value))} aria-label="Harga" onKeyDown={e => e.key === 'Enter' && addLine()} />
+        <input type="number" min="1" step="1" value={qty || ''} onChange={e => setQty(Number(e.target.value))} aria-label="Jumlah" />
+        <input type="number" min="0" value={price || ''} onChange={e => setPrice(Number(e.target.value))} aria-label="Harga" onKeyDown={e => e.key === 'Enter' && addLine()} />
         <button type="button" className="button secondary" onClick={addLine}><CirclePlus /> Tambah</button>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
@@ -229,7 +229,7 @@ function StockTab() {
       <div className="panel-heading"><div><p className="eyebrow">Koreksi stok</p><h2>Sesuaikan stok barang</h2></div></div>
       <div className="form-grid">
         <label className="span-2">Barang<ProductPicker query={query} setQuery={value => { setQuery(value); setPicked(null); }} results={results} onPick={pick} /></label>
-        <label>Jumlah koreksi (+/-)<input type="number" value={delta} onChange={e => setDelta(Number(e.target.value))} placeholder="Contoh: -2 atau 5" /></label>
+        <label>Jumlah koreksi (+/-)<input type="number" value={delta || ''} onChange={e => setDelta(Number(e.target.value))} placeholder="Contoh: -2 atau 5" /></label>
         <label>Alasan<select value={reason} onChange={e => setReason(e.target.value)}>{REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
         <label className="span-2">Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="Detail tambahan" /></label>
       </div>

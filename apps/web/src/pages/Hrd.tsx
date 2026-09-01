@@ -183,7 +183,7 @@ function LeaveRequestModal({ employees, onClose, onSaved }: { employees: Employe
     <label>Jenis<select value={type} onChange={e => setType(e.target.value as LeaveType)}>{(Object.keys(LEAVE_TYPE_LABEL) as LeaveType[]).map(t => <option key={t} value={t}>{LEAVE_TYPE_LABEL[t]}</option>)}</select></label>
     {type === 'lembur' ? <div className="form-grid">
       <label>Tanggal<input value={startDate} onChange={e => setStartDate(e.target.value)} type="date" /></label>
-      <label>Jam lembur<input type="number" min="1" value={hours} onChange={e => setHours(Number(e.target.value))} /></label>
+      <label>Jam lembur<input type="number" min="1" value={hours || ''} onChange={e => setHours(Number(e.target.value))} /></label>
     </div> : <div className="form-grid">
       <label>Dari tanggal<input value={startDate} onChange={e => setStartDate(e.target.value)} type="date" /></label>
       <label>Sampai tanggal<input value={endDate} onChange={e => setEndDate(e.target.value)} type="date" min={startDate} /></label>
