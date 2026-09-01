@@ -41,25 +41,22 @@ final class CashController
             'cashSource' => 'required_if:direction,in|nullable|in:daily,loan,cashier,petty,in_transit,bank',
         ]);
         try {
-            // Both 'daily' (Kas Kasir hari ini) and 'loan' (Saldo Akumulasi Toko) draws pull money
-            // that conceptually flows INTO the shop first and then back out: a matching kas masuk
-            // of the same amount, tagged with the same source, is booked FIRST so it always sorts/
-            // shows ahead of the draw. 'daily' draws that cashier's own till; 'loan' pulls from the
-            // sales pool (the pull itself is the LoanPayable netting booked below, against Laporan
-            // Penjualan). Either way the source's own pool nets to zero across the two rows.
-            if ($data['direction'] === 'out' && in_array($data['fundingSource'], ['daily', 'loan'], true)) {
+            // A "daily" (Kas Kasir hari ini) draw is money the shop already holds (that cashier's
+            // own till), just moved to another purpose - so it books a matching kas masuk of the
+            // same amount FIRST, keeping the Kas Kasir pool net-zero across the two rows. A 'loan'
+            // (Saldo Akumulasi Toko) draw is NOT paired here: it genuinely lowers the accumulated
+            // balance (pool goes -X) and is only restored when the debt is repaid (that repayment
+            // books the +X kas masuk back to Saldo Akumulasi Toko - see LoanPayableRepository).
+            if ($data['direction'] === 'out' && $data['fundingSource'] === 'daily') {
                 // idempotency_key is CHAR(36) - too short for the raw key plus a suffix - so the
                 // linked entry's key is derived via hash instead of concatenation.
                 $linkedKey = $idempotencyKey ? self::deriveLinkedKey($idempotencyKey) : null;
                 if (!$linkedKey || !Idempotency::find($linkedKey)) {
-                    $note = $data['fundingSource'] === 'daily'
-                        ? mb_substr("Transaksi {$data['fundingCashierName']}", 0, 50)
-                        : 'Tarik saldo akumulasi toko';
+                    $note = mb_substr("Transaksi {$data['fundingCashierName']}", 0, 50);
                     $linked = $repo->create('in', (float) $data['amount'], $data['category'], $note, $request->user()?->getKey(), $linkedKey);
                     DB::table('app_cash_entry_funding')->insert([
-                        'ledger_id' => $linked['id'], 'cash_source' => $data['fundingSource'],
-                        'cashier_name' => $data['fundingSource'] === 'daily' ? $data['fundingCashierName'] : null,
-                        'created_at' => now(),
+                        'ledger_id' => $linked['id'], 'cash_source' => 'daily',
+                        'cashier_name' => $data['fundingCashierName'], 'created_at' => now(),
                     ]);
                 }
             }

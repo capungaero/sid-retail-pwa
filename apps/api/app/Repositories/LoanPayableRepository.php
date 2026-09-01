@@ -30,13 +30,13 @@ final class LoanPayableRepository
     }
 
     // Same row-lock pattern as LegacyPayableRepository::addPayment - see that file's comment.
-    // Repaying a loan also books a real kas keluar from the chosen wallet ($fundingSource):
-    // 'daily' (Kas Kasir) draws today's takings under $cashierName - so paying a loan back with
-    // till money shows up as an expense today, exactly like a normal kas keluar; the other wallets
-    // (petty/bank/in_transit) draw down their own running pool balance. This is booked straight
-    // through the cash-ledger repo (NOT CashController::store), so it deliberately does NOT trigger
-    // the "daily draw books a matching kas masuk" pool-keeper - loan-repayment money genuinely
-    // leaves the till, it isn't just moved to another purpose within the shop.
+    // Repaying a loan is a TRANSFER, booked as two cash-ledger rows for the applied amount:
+    //   - kas MASUK +X into Saldo Akumulasi Toko (cash_source 'loan') - "Pelunasan Pinjaman" -
+    //     restoring the accumulated balance the original draw lowered (draw -X, repay +X = net 0).
+    //   - kas KELUAR -X from the chosen wallet ($fundingSource): 'daily' (Kas Kasir) draws today's
+    //     takings under $cashierName, the other wallets (petty/bank/in_transit) draw down their own
+    //     pool. Booked straight through the cash-ledger repo (NOT CashController::store), so the
+    //     'daily' pool-keeper masuk isn't triggered - this money genuinely leaves that wallet.
     public function addPayment(string $loanId, float $amount, ?string $note, string $fundingSource, ?string $cashierName, ?string $operator, LegacyCashLedgerRepository $cashRepo, ?string $idempotencyKey = null): array
     {
         return DB::transaction(function () use ($loanId, $amount, $note, $fundingSource, $cashierName, $operator, $cashRepo, $idempotencyKey) {
@@ -53,7 +53,13 @@ final class LoanPayableRepository
                 'note' => $note, 'created_at' => now(),
             ]);
 
-            // Book the outflow from the chosen wallet for the amount actually applied ($capped).
+            // Inflow: the repaid amount returns to Saldo Akumulasi Toko (cash_source 'loan').
+            $inNote = mb_substr('Pelunasan pinjaman #'.substr($loanId, 0, 8), 0, 50);
+            $inEntry = $cashRepo->create('in', $capped, 'Pelunasan Pinjaman', $inNote, $operator, null);
+            DB::table('app_cash_entry_funding')->insert([
+                'ledger_id' => $inEntry['id'], 'cash_source' => 'loan', 'created_at' => now(),
+            ]);
+            // Outflow: the money leaves the chosen wallet for the amount actually applied ($capped).
             $entry = $cashRepo->create('out', $capped, 'Bayar hutang pinjaman', mb_substr((string) ($note ?? 'Bayar hutang pinjaman'), 0, 50), $operator, null);
             DB::table('app_cash_entry_funding')->insert([
                 'ledger_id' => $entry['id'], 'funding_source' => $fundingSource,

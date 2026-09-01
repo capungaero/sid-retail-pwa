@@ -352,13 +352,12 @@ export async function addCashEntry(input: { direction: CashDirection; amount: nu
   if (!baseUrl) {
     let previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
     const isDaily = input.direction === 'out' && input.fundingSource === 'daily';
-    const isLoanOut = input.direction === 'out' && input.fundingSource === 'loan';
-    // Both 'daily' and 'loan' draws also book a matching kas masuk into the same pool - see
-    // CashController's comment. Booked FIRST so it always sorts/shows ahead of the draw that pulls
-    // from it; without it the pool balance would only ever go negative.
-    if (isDaily || isLoanOut) {
+    // A "daily" draw books a matching kas masuk into the Kas Kasir pool - see CashController's
+    // comment. Booked FIRST so it sorts/shows ahead of the draw. A 'loan' draw is NOT paired: it
+    // lowers Saldo Akumulasi Toko and is only restored on repayment (see addLoanPayment).
+    if (isDaily) {
       previousBalance = nextCashBalance(previousBalance, 'in', input.amount);
-      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: isDaily ? `Transaksi ${input.fundingCashierName}` : 'Tarik saldo akumulasi toko', cashSource: input.fundingSource as CashInSource, fundingCashierName: isDaily ? input.fundingCashierName : undefined, balanceAfter: previousBalance, createdAt: new Date().toISOString() });
+      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: `Transaksi ${input.fundingCashierName}`, cashSource: 'daily', fundingCashierName: input.fundingCashierName, balanceAfter: previousBalance, createdAt: new Date().toISOString() });
     }
     const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, fundingCashierName: isDaily ? input.fundingCashierName : undefined, cashSource: input.direction === 'in' ? input.cashSource : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
     demoCashEntries.push(entry);
@@ -400,8 +399,11 @@ export async function addLoanPayment(loanId: string, amount: number, note: strin
     const capped = capPayment(payableOutstanding(loan), amount);
     if (capped <= 0) throw new Error('Jumlah pembayaran tidak valid');
     loan.payments.push({ id: crypto.randomUUID(), amount: capped, note, createdAt: new Date().toISOString() });
-    // Mirror the server: repaying books a kas keluar from the chosen wallet.
-    const previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
+    // Mirror the server transfer: kas masuk +X back into Saldo Akumulasi Toko, then kas keluar -X
+    // from the chosen wallet.
+    let previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
+    previousBalance = nextCashBalance(previousBalance, 'in', capped);
+    demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: capped, category: 'Pelunasan Pinjaman', note: `Pelunasan pinjaman #${loanId.slice(0, 8)}`, cashSource: 'loan', balanceAfter: previousBalance, createdAt: new Date().toISOString() });
     demoCashEntries.push({ id: crypto.randomUUID(), direction: 'out', amount: capped, category: 'Bayar hutang pinjaman', note, fundingSource, fundingCashierName: fundingSource === 'daily' ? fundingCashierName : undefined, balanceAfter: nextCashBalance(previousBalance, 'out', capped), createdAt: new Date().toISOString() });
     return loan;
   }
