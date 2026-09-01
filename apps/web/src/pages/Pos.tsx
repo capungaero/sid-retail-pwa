@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArchiveRestore, ArrowLeftRight, Banknote, Check, ChevronDown, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, X } from 'lucide-react';
-import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCustomers, listProducts, listSales } from '../lib/api';
+import { ArchiveRestore, ArrowLeftRight, Banknote, Check, ChevronDown, CircleDollarSign, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, TrendingDown, Wallet, X } from 'lucide-react';
+import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCashEntries, listCustomers, listProducts, listSales } from '../lib/api';
 import { money, number } from '../lib/money';
 import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
-import { countDistinctTransactions, exchangeHopsFor, netBasketTotal, netSaleTotal, rootSalesOnly } from '../lib/reports';
+import { countDistinctTransactions, dailyDrawnTotal, exchangeHopsFor, netBasketTotal, netSaleTotal, rootSalesOnly } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
-import type { CartLine, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
+import type { CartLine, CashLedgerEntry, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
 const general: Customer = { id: 'general', code: 'UMUM', name: 'Pelanggan Umum', tier: 'retail' };
@@ -257,8 +257,15 @@ function HistoryTab() {
   const [detail, setDetail] = useState<SaleRecord | null>(null); const [reprintingId, setReprintingId] = useState<string | null>(null);
   const [exchange, setExchange] = useState<{ invoice: string; line: SaleLine } | null>(null);
   const [cashierQuery, setCashierQuery] = useState(''); const [methodFilter, setMethodFilter] = useState(''); const [adjustmentFilter, setAdjustmentFilter] = useState<'' | 'completed' | 'exchanged'>(''); const [printingReport, setPrintingReport] = useState(false);
+  const [cashEntries, setCashEntries] = useState<CashLedgerEntry[]>([]);
   const { previewAndPrint, modal } = useReceiptPreview();
-  const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false)); };
+  const load = () => {
+    setLoading(true); setError('');
+    listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat riwayat')).finally(() => setLoading(false));
+    // Best-effort: finance:read gated, so a kasir token 403s here - that just leaves Pengeluaran
+    // at 0, it doesn't break the history view (same graceful-degradation pattern as Dashboard).
+    listCashEntries().then(setCashEntries).catch(() => setCashEntries([]));
+  };
   useEffect(load, []);
   const todayKey = localTodayKey();
   const todaySales = useMemo(() => sales.filter(s => s.createdAt.slice(0, 10) === todayKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [sales, todayKey]);
@@ -269,8 +276,14 @@ function HistoryTab() {
       .filter(s => !q || (s.cashierName || '').toLowerCase().includes(q))
       .filter(s => !methodFilter || s.methodName === methodFilter);
   }, [todaySales, cashierQuery, methodFilter]);
-  const totalToday = useMemo(() => visibleSales.reduce((sum, s) => sum + netSaleTotal(s), 0), [visibleSales]);
   const transactionCountToday = useMemo(() => countDistinctTransactions(visibleSales), [visibleSales]);
+  // The three summary cards are day-level totals (not narrowed by the search/method filters, which
+  // only scope the table rows) so Sisa saldo = Pendapatan - Pengeluaran always reconciles, and they
+  // agree with Ringkasan's own cards. Pendapatan is gross sales (net of exchanges); Pengeluaran is
+  // today's kas keluar drawn from "Kas Kasir (Transaksi Hari Ini)"; Sisa saldo is the remainder.
+  const pendapatanHariIni = useMemo(() => todaySales.reduce((sum, s) => sum + netSaleTotal(s), 0), [todaySales]);
+  const pengeluaranHariIni = useMemo(() => dailyDrawnTotal(cashEntries, { start: todayKey, end: todayKey }), [cashEntries, todayKey]);
+  const sisaSaldo = pendapatanHariIni - pengeluaranHariIni;
   // Rows actually rendered/printed: an exchange's replacement invoice never gets its own row -
   // its whole history (what it became, kurang bayar/kembalian, settled or not) lives in the
   // original faktur's own Detail instead. Totals above still read the full visibleSales set,
@@ -314,7 +327,7 @@ function HistoryTab() {
     finally { setPrintingReport(false); }
   }
   return <section className="pos-main history-tab">
-    <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{transactionCountToday} transaksi · {money.format(totalToday)}</span></div>
+    <div className="cart-heading history-heading"><div><h2>Riwayat transaksi hari ini</h2><span>{transactionCountToday} transaksi</span></div>
       <div className="history-tools">
         <label className="search-box history-search"><Search aria-hidden="true" /><span className="sr-only">Cari nama kasir</span><input value={cashierQuery} onChange={e => setCashierQuery(e.target.value)} placeholder="Cari kasir…" /></label>
         <label className="history-filter-label" htmlFor="history-method-filter">Tipe transaksi</label>
@@ -332,6 +345,11 @@ function HistoryTab() {
         <button className="button ghost" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
       </div>
     </div>
+    <section className="history-summary" aria-label="Ringkasan hari ini">
+      <article className="metric"><span className="metric-icon blue"><CircleDollarSign /></span><div><span>Pendapatan hari ini</span><strong>{loading ? '—' : money.format(pendapatanHariIni)}</strong><small>{number.format(transactionCountToday)} transaksi</small></div></article>
+      <article className="metric"><span className="metric-icon red"><TrendingDown /></span><div><span>Pengeluaran hari ini</span><strong>{loading ? '—' : money.format(pengeluaranHariIni)}</strong><small>Dari kas kasir hari ini</small></div></article>
+      <article className="metric"><span className="metric-icon green"><Wallet /></span><div><span>Sisa saldo</span><strong>{loading ? '—' : money.format(sisaSaldo)}</strong><small>Pendapatan &minus; pengeluaran</small></div></article>
+    </section>
     {error && <div className="notice error" role="alert">{error}</div>}
     {loading ? <div className="empty-state" role="status">Memuat riwayat…</div> : !tableRows.length ? <div className="empty-state"><History /><p>{cashierQuery || methodFilter || adjustmentFilter ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi hari ini.'}</p></div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Waktu</th><th>Kasir</th><th>Pelanggan</th><th>Metode</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
       {tableRows.map(s => <tr key={s.id}>
