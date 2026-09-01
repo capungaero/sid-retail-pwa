@@ -31,6 +31,20 @@ describe('daily sales report', () => {
     expect(html).toContain('TOTAL KESELURUHAN: Rp 7.000');
     expect(html).toContain('TOTAL AKHIR: Rp 4.500');
   });
+  it('keeps a swapped item under its original faktur: old item red, replacement shown, no replacement-faktur reference', () => {
+    const root: SaleRecord = {
+      id: 'r', invoice: 'PWA-0003', customerId: 'general', customerName: 'Umum', cashierName: 'Admin', methodName: 'Transfer',
+      lines: [{ productId: 'shampo', productName: 'SHAMPO SUNSILK', unit: 'RENTENG', qty: 1, price: 9500, discount: 0 }],
+      total: 9500, paid: 9500, change: 0, createdAt: '2026-09-01T01:00:00.000Z',
+      exchanges: [{ oldProductId: 'shampo', oldUnit: 'RENTENG', oldQty: 1, oldLineValue: 9500, newInvoice: 'PWA-0007', newProductName: 'SUNLIGHT 375 GR', newUnit: 'PCS', newQty: 1, newLineValue: 6500 }],
+    };
+    const repl: SaleRecord = { id: 'r2', invoice: 'PWA-0007', customerId: 'general', customerName: 'Umum', cashierName: 'Admin', methodName: 'Transfer', lines: [{ productId: 'sunlight', productName: 'SUNLIGHT 375 GR', unit: 'PCS', qty: 1, price: 6500, discount: 0 }], total: 6500, paid: 6500, change: 0, createdAt: '2026-09-01T01:05:00.000Z' };
+    const html = dailySalesReportHtml([root], 'Selasa, 01 September 2026', { allSales: [root, repl] });
+    expect(html).toContain('class="swapped"');
+    expect(html).toContain('SHAMPO SUNSILK');
+    expect(html).toContain('SUNLIGHT 375 GR');
+    expect(html).not.toContain('faktur PWA-0007');
+  });
   it('shows a placeholder when there are no expenses', () => {
     const html = dailySalesReportHtml([sale], 'Selasa, 01 September 2026', {});
     expect(html).toContain('Tidak ada pengeluaran dari kas kasir hari ini');

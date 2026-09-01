@@ -1,6 +1,6 @@
 import type { Customer, PaperWidth, SaleRecord, StoreProfile } from '../types';
 import { money, number } from './money';
-import { countDistinctTransactions, netBasketTotal } from './reports';
+import { countDistinctTransactions, exchangeHopsFor, netBasketTotal } from './reports';
 
 // Deliberately flat and decoupled from CartLine: a receipt is printed both right after a
 // checkout (where lines come from the live cart) and when reprinting a past sale from history
@@ -72,16 +72,28 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opt
   const stockCellFor = (productId: string) => stockByProduct?.has(productId) ? number.format(stockByProduct.get(productId)!) : '—';
   const sections = ordered.map(sale => {
     const exchanges = sale.exchanges ?? [];
-    const exchangeFor = (productId: string, unit: string) => exchanges.find(x => x.oldProductId === productId && x.oldUnit === unit);
-    const method = escapeHtml(sale.methodName || '—');
-    const cashier = escapeHtml(sale.cashierName || '—');
-    const rows = sale.lines.map((l, i) => {
-      const ex = exchangeFor(l.productId, l.unit);
-      const note = ex ? `<br><span class="ex-note">&#8644; Ditukar &rarr; ${escapeHtml(ex.newProductName)} (faktur ${escapeHtml(ex.newInvoice)})</span>` : '';
-      return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(l.productName)}${note}</td><td>${escapeHtml(l.unit)}</td><td class="num">${number.format(l.qty)}</td><td>${method}</td><td>${cashier}</td><td class="num">${money.format(l.price)}</td><td class="num">${stockCellFor(l.productId)}</td></tr>`;
-    }).join('');
+    // A swapped item stays under its ORIGINAL faktur (never re-numbered to the replacement's own
+    // invoice). Each original line expands to: the old item in red (swapped away), then its
+    // replacement(s) - the final one the customer kept in black, any intermediate swaps also red.
+    type Row = { name: string; unit: string; qty: number; unitPrice: number; method?: string | null; cashier?: string | null; productId?: string; red: boolean };
+    const displayRows: Row[] = [];
+    sale.lines.forEach(l => {
+      const hops = exchangeHopsFor(sale, l.productId, l.unit, allSales);
+      if (!hops.length) {
+        displayRows.push({ name: l.productName, unit: l.unit, qty: l.qty, unitPrice: l.price, method: sale.methodName, cashier: sale.cashierName, productId: l.productId, red: false });
+        return;
+      }
+      displayRows.push({ name: l.productName, unit: l.unit, qty: l.qty, unitPrice: l.price, method: sale.methodName, cashier: sale.cashierName, productId: l.productId, red: true });
+      hops.forEach((h, hi) => {
+        const repl = allSales.find(s => s.invoice === h.invoice);
+        displayRows.push({ name: h.newProductName, unit: h.newUnit, qty: h.newQty, unitPrice: h.newQty ? h.newLineValue / h.newQty : h.newLineValue, method: repl?.methodName ?? sale.methodName, cashier: repl?.cashierName ?? sale.cashierName, productId: repl?.lines[0]?.productId, red: hi !== hops.length - 1 });
+      });
+    });
+    const rows = displayRows.map((r, i) =>
+      `<tr${r.red ? ' class="swapped"' : ''}><td class="num">${i + 1}</td><td>${escapeHtml(r.name)}${r.red ? ' <span class="swap-tag">(barang lama, ditukar)</span>' : ''}</td><td>${escapeHtml(r.unit)}</td><td class="num">${number.format(r.qty)}</td><td>${escapeHtml(r.method || '—')}</td><td>${escapeHtml(r.cashier || '—')}</td><td class="num">${money.format(r.unitPrice)}</td><td class="num">${r.productId ? stockCellFor(r.productId) : '—'}</td></tr>`
+    ).join('');
     const banner = exchanges.length
-      ? `<p class="faktur-flag">&#8644; Faktur ini sudah ditukar &mdash; barang pengganti tercatat di ${exchanges.map(x => `faktur ${escapeHtml(x.newInvoice)}`).join(', ')}.</p>`
+      ? `<p class="faktur-flag">&#8644; Faktur ini ada penukaran barang &mdash; barang lama ditandai <span style="color:#c0392b">merah</span>, barang penggantinya hitam.</p>`
       : '';
     // Only exchanged fakturs need the reconciliation line - a plain sale's net value equals the
     // sum of its listed Harga, so showing it would just be noise.
@@ -103,10 +115,8 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opt
     : '<p class="ex-empty">Tidak ada pengeluaran dari kas kasir hari ini.</p>';
   // Small footnote so the reader can reconcile the totals against the listed Harga and the expenses.
   const noteLines = [
-    'Total keseluruhan = jumlah nilai akhir tiap faktur (kolom Harga dijumlah, lalu disesuaikan bila ada tukar barang).',
     ...(anyExchange ? [
-      'Untuk faktur yang ditukar: nilai barang lama diganti nilai barang penggantinya, jadi total bisa berbeda dari jumlah Harga yang tercantum (lihat baris "Nilai akhir faktur").',
-      'Barang pengganti dicatat di fakturnya sendiri dan TIDAK dihitung ulang di sini, supaya tidak dobel.',
+      'Barang yang ditukar tetap berada di nomor faktur asalnya. Barang lama (merah) hanya sebagai catatan; TOTAL KESELURUHAN hanya menghitung barang hitam (yang benar-benar dibeli).',
     ] : []),
     '"Sisa stok" = sisa stok barang saat laporan ini dicetak.',
     'Total akhir = Total keseluruhan &minus; seluruh pengeluaran dari kas kasir hari ini.',
@@ -126,16 +136,17 @@ export function dailySalesReportHtml(sales: SaleRecord[], dateLabel: string, opt
     th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;word-wrap:break-word}
     th{background:#f1f1f1}
     .num{text-align:right}
-    .ex-note{font-size:10px;color:#7a5300}
+    tr.swapped td{color:#c0392b}
+    .swap-tag{font-size:9.5px}
     .grand{margin-top:10px;padding-top:10px;border-top:2px solid #111;text-align:right;font-size:14px;font-weight:bold}
     .grand.final{margin-top:8px;border-top-width:1px}
-    .expenses{margin-top:12px;font-size:11px}
-    .ex-head{margin:0 0 4px;font-weight:bold}
-    .ex-list{margin:0;padding-left:22px}
+    .expenses{margin-top:12px;font-size:14px;font-weight:bold}
+    .ex-head{margin:0 0 4px}
+    .ex-list{margin:0;padding-left:24px}
     .ex-list li{margin:2px 0;display:flex;justify-content:space-between;gap:12px}
     .ex-label{flex:1}
     .ex-amt{white-space:nowrap;font-variant-numeric:tabular-nums}
-    .ex-empty{margin:0;color:#555}
+    .ex-empty{margin:0}
     .note{margin-top:14px;font-size:10px;color:#555}
     .note ul{margin:4px 0 0;padding-left:16px}
     .note li{margin:2px 0}
