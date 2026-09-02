@@ -128,10 +128,11 @@ final class CashController
                     // report all see the deduction. Guarded by a derived idempotency key so a retry
                     // can't book the deduction twice. Booked straight through the ledger repo, so it
                     // never triggers the out-path's loan/daily-pairing side effects.
+                    $userNote = $data['note'] ?? null;
                     $srcLabel = self::poolLabel($src); $destLabel = self::poolLabel($dest);
                     $linkedKey = $idempotencyKey ? self::deriveLinkedKey($idempotencyKey) : null;
                     if (!$linkedKey || !Idempotency::find($linkedKey)) {
-                        $outNote = mb_substr('Setoran ke '.$destLabel.($data['note'] ? ' — '.$data['note'] : ''), 0, 50);
+                        $outNote = mb_substr('Setoran ke '.$destLabel.($userNote ? ' — '.$userNote : ''), 0, 50);
                         $outLeg = $repo->create('out', (float) $data['amount'], $data['category'], $outNote, $request->user()?->getKey(), $linkedKey);
                         DB::table('app_cash_entry_funding')->insert([
                             'ledger_id' => $outLeg['id'], 'funding_source' => $src, 'created_at' => now(),
@@ -139,7 +140,7 @@ final class CashController
                     }
                     // Make the +X leg read as "Dari <source>" so the pairing is legible in Buku Kas.
                     $c = config('sid.cash_ledger.columns');
-                    $inNote = mb_substr('Dari '.$srcLabel.($data['note'] ? ' — '.$data['note'] : ''), 0, 50);
+                    $inNote = mb_substr('Dari '.$srcLabel.($userNote ? ' — '.$userNote : ''), 0, 50);
                     DB::table(config('sid.cash_ledger.table'))->where($c['id'], $entry['id'])->update([$c['note'] => $inNote]);
                     $entry['note'] = $inNote;
                 }
