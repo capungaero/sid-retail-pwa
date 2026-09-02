@@ -3,7 +3,6 @@ namespace App\Http\Controllers;
 use App\Repositories\LegacyCashLedgerRepository;
 use App\Repositories\LoanPayableRepository;
 use App\Support\Idempotency;
-use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -106,12 +105,9 @@ final class CashController
                 ]);
                 $entry['fundingSource'] = $data['fundingSource'];
                 $entry['fundingCashierName'] = $data['fundingSource'] === 'daily' ? $data['fundingCashierName'] : null;
-                if ($data['fundingSource'] === 'loan') {
-                    // Draws against the previous day's already-closed sales, not today's still-open
-                    // till - see LoanPayableRepository/migration comment.
-                    $forDate = Carbon::parse($entry['createdAt'])->subDay()->toDateString();
-                    $loanRepo->create($entry['id'], (float) $data['amount'], $forDate, $data['note'] ?? null);
-                }
+                // A kas keluar from Saldo Akumulasi Toko SPENDS money already borrowed (the hutang
+                // pinjaman is booked on the kas MASUK side now), so it no longer books its own debt -
+                // that double-counted the loan. It just lowers the 'loan' wallet's cash.
             } else {
                 // Single +X row into the cash book, tagged with its source. A 'daily' source nets
                 // that day's cashier recap (see DailyReportController / reports.ts).
