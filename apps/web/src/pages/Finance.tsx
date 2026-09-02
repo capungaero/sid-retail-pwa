@@ -303,7 +303,7 @@ function PayablePaymentModal({ payable, onClose, onSaved }: { payable: Payable; 
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="payable-title">
     <div className="modal-heading"><div><p className="eyebrow">Hutang supplier</p><h2 id="payable-title">Bayar {payable.supplierName}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <p>Sisa hutang: <strong>{money.format(outstanding)}</strong></p>
-    <label>Jumlah dibayar<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount || ''} onChange={e => setAmount(Math.max(0, Math.min(outstanding, Number(e.target.value))))} /></label>
+    <label>Jumlah dibayar<input data-autofocus="true" type="text" inputMode="numeric" placeholder="0" value={amount ? number.format(amount) : ''} onChange={e => setAmount(Math.min(outstanding, Number(e.target.value.replace(/\D/g, '')) || 0))} /></label>
     <label>Catatan (opsional)<input value={note} onChange={e => setNote(e.target.value)} placeholder="No. kwitansi, dsb." /></label>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Batal</button><button type="button" className="button primary" onClick={submit} disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan pembayaran'}</button></div>
@@ -446,12 +446,9 @@ function LoanPayableTab() {
 // The wallets a loan repayment's money can come out of - each books a real kas keluar from that
 // wallet (see LoanPayableController). 'daily' (Kas Kasir) draws today's takings under a chosen
 // cashier; the rest draw down their own pool balance.
-const LOAN_PAY_SOURCES: { value: CashFundingSource; label: string }[] = [
-  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
-  { value: 'petty', label: 'Kas Kecil' },
-  { value: 'bank', label: 'Kas Bank' },
-  { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
-];
+// Same wallet choices as the Kas masuk & keluar tab (FUNDING_SOURCES), so repaying a hutang
+// pinjaman returns the cash under the same category it was recorded with there.
+const LOAN_PAY_SOURCES: { value: CashFundingSource; label: string }[] = FUNDING_SOURCES;
 
 function LoanPaymentModal({ loan, onClose, onSaved }: { loan: LoanPayable; onClose: () => void; onSaved: (loan: LoanPayable) => void }) {
   const outstanding = payableOutstanding(loan);
@@ -479,7 +476,7 @@ function LoanPaymentModal({ loan, onClose, onSaved }: { loan: LoanPayable; onClo
   return <div className="modal-overlay" role="presentation"><section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="loan-title">
     <div className="modal-heading"><div><p className="eyebrow">Hutang pinjaman</p><h2 id="loan-title">Bayar hutang {new Date(loan.createdAt).toLocaleDateString('id-ID')}</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
     <p>Sisa hutang: <strong>{money.format(outstanding)}</strong></p>
-    <label>Jumlah dibayar<input data-autofocus="true" type="number" min="0" max={outstanding} value={amount || ''} onChange={e => setAmount(Math.max(0, Math.min(outstanding, Number(e.target.value))))} /></label>
+    <label>Jumlah dibayar<input data-autofocus="true" type="text" inputMode="numeric" placeholder="0" value={amount ? number.format(amount) : ''} onChange={e => setAmount(Math.min(outstanding, Number(e.target.value.replace(/\D/g, '')) || 0))} /></label>
     <label>Sumber kas<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber kas…</option>{LOAN_PAY_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
       {fundingSource && fundingSource !== 'daily' && <small className="muted">Saldo {LOAN_PAY_SOURCES.find(f => f.value === fundingSource)?.label} saat ini: {money.format(cashPoolBalance(entries, fundingSource))}</small>}
       {fundingSource === 'daily' && <small className="muted">Diambil dari pendapatan tunai kasir hari ini</small>}
