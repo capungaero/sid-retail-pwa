@@ -48,18 +48,18 @@ export function loanOutstandingDrawnTotal(loans: LoanPayable[], range: DateRange
     .reduce((sum, l) => sum + Math.max(0, l.amount - totalPaid(l.payments)), 0);
 }
 
-// Combines dailyDrawnTotal with loanOutstandingDrawnTotal - the full deduction Laporan >
-// Penjualan & pembelian applies to its "Penjualan" figure. Rekap harian and Ringkasan stay
-// 'daily'-only (dailyDrawnTotal): both are specifically "today", and a loan draw was never
-// today's own revenue the way a 'daily' draw is.
-export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], loans: LoanPayable[], range: DateRange, cashierName?: string): number {
-  // A kas masuk deposited FROM the store's accumulated balance (cashSource 'loan') nets the
-  // store's reported revenue too - excluding "Pelunasan Pinjaman", which is a loan REPAYMENT
-  // returning to that balance, not a draw out of it.
+// The deduction Laporan > Penjualan & pembelian applies to its "Penjualan" figure. Drawing the
+// store's accumulated balance no longer nets Penjualan on the kas KELUAR side (that draw now just
+// spends the "Saldo Akumulasi Toko" cash the kas MASUK below already brought in, and links to a
+// hutang pinjaman) - so `_loans` is unused. Penjualan is netted only by:
+//   - dailyDrawnTotal: money pulled from today's own till, and
+//   - a kas masuk sourced 'loan': realising accumulated profit into spendable cash, which draws
+//     the reported revenue down once (excluding "Pelunasan Pinjaman", a repayment back into it).
+export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], _loans: LoanPayable[], range: DateRange, cashierName?: string): number {
   const loanSourcedInflow = entries
     .filter(e => e.direction === 'in' && e.cashSource === 'loan' && e.category !== 'Pelunasan Pinjaman' && withinRange(e.createdAt, range))
     .reduce((sum, e) => sum + e.amount, 0);
-  return dailyDrawnTotal(entries, range, cashierName) + loanOutstandingDrawnTotal(loans, range) + loanSourcedInflow;
+  return dailyDrawnTotal(entries, range, cashierName) + loanSourcedInflow;
 }
 
 // Running balance for one physical cash pool tag (Kas Kasir / Kas Kecil / Kas Dalam Perjalanan /

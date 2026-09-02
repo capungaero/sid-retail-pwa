@@ -179,13 +179,21 @@ describe('reportedRevenueDrawnTotal', () => {
     { id: 'k4', direction: 'out', amount: 99999, category: 'x', fundingSource: 'petty', balanceAfter: 0, createdAt: '2026-08-29T04:00:00.000Z' },
     { id: 'k5', direction: 'out', amount: 99999, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-01T00:00:00.000Z' },
   ];
-  // A loan drawn on 8/30 books forDate 8/29 - it nets into the 8/29 report row, not 8/30's.
+  // Loans (kas keluar draws) no longer net Penjualan - only the daily draw does here (50000).
   const loans: LoanPayable[] = [{ id: 'l1', ledgerId: 'k2', amount: 30000, forDate: '2026-08-29', payments: [], createdAt: '2026-08-30T02:00:00.000Z' }];
-  it('sums both the daily draw and the loan\'s outstanding amount against its forDate, within range', () => {
-    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(80000);
+  it('nets the daily draw but NOT a loan draw (loans spend accumulated cash, not Penjualan)', () => {
+    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(50000);
   });
-  it('narrows to one cashier own daily draws when given, still counting loan draws', () => {
-    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(80000);
+  it('narrows to one cashier own daily draws when given', () => {
+    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(50000);
+  });
+  it('nets a kas masuk sourced from Saldo Akumulasi Toko, but not a Pelunasan Pinjaman inflow', () => {
+    const withInflow: CashLedgerEntry[] = [
+      ...entries,
+      { id: 'in1', direction: 'in', amount: 20000, category: 'Setoran modal', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T05:00:00.000Z' },
+      { id: 'in2', direction: 'in', amount: 70000, category: 'Pelunasan Pinjaman', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T06:00:00.000Z' },
+    ];
+    expect(reportedRevenueDrawnTotal(withInflow, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(70000);
   });
 });
 
