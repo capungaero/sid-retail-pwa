@@ -19,22 +19,15 @@ const FUNDING_SOURCES: { value: CashFundingSource; label: string; hint?: string 
   { value: 'petty', label: 'Kas Kecil' },
 ];
 
-// Sumber dana for a kas masuk = where the money CAME FROM. 'external' is genuine outside income
-// (plain +X); any wallet means a transfer (the wallet is debited, destination credited).
+// Sumber dana for a kas masuk = which account the money came from. The +X always lands in the
+// active cash book; the source only drives a report side-effect: 'daily' nets that day's cashier
+// recap, 'loan' nets the store's accumulated revenue, anything else changes neither figure.
 const CASH_SOURCES: { value: CashInSource; label: string }[] = [
-  { value: 'external', label: 'Dari luar (penjualan / modal / pendapatan lain)' },
   { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
   { value: 'loan', label: 'Saldo Akumulasi Toko (Tarik Modal/Laba)' },
   { value: 'bank', label: 'Kas Bank' },
   { value: 'petty', label: 'Kas Kecil' },
-];
-
-// Kas tujuan for a kas masuk = which wallet the money LANDS in. Always a real wallet (no external).
-const CASH_DESTINATIONS: { value: CashInSource; label: string }[] = [
-  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
-  { value: 'loan', label: 'Saldo Akumulasi Toko' },
-  { value: 'bank', label: 'Kas Bank' },
-  { value: 'petty', label: 'Kas Kecil' },
+  { value: 'external', label: 'Dari luar (modal / pendapatan lain)' },
 ];
 
 const TABS = [
@@ -220,7 +213,6 @@ function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntr
   const [fundingSource, setFundingSource] = useState<CashFundingSource | null>(null);
   const [fundingCashierName, setFundingCashierName] = useState('');
   const [cashSource, setCashSource] = useState<CashInSource | null>(null);
-  const [destinationSource, setDestinationSource] = useState<CashInSource | null>(null);
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
   const [sales, setSales] = useState<SaleRecord[]>([]); const [cashMethodName, setCashMethodName] = useState<string | null>(null);
   const modalRef = useModalTrap(onClose);
@@ -240,8 +232,6 @@ function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntr
     if (direction === 'out' && !fundingSource) return setError('Pilih sumber dana.');
     if (direction === 'out' && fundingSource === 'daily' && !fundingCashierName) return setError('Pilih kasir.');
     if (direction === 'in' && !cashSource) return setError('Pilih sumber dana.');
-    if (direction === 'in' && !destinationSource) return setError('Pilih kas tujuan.');
-    if (direction === 'in' && cashSource !== 'external' && cashSource === destinationSource) return setError('Sumber dana dan kas tujuan tidak boleh sama.');
     setSaving(true); setError('');
     try {
       onSaved(await addCashEntry({
@@ -249,7 +239,6 @@ function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntr
         fundingSource: direction === 'out' ? fundingSource ?? undefined : undefined,
         fundingCashierName: direction === 'out' && fundingSource === 'daily' ? fundingCashierName : undefined,
         cashSource: direction === 'in' ? cashSource ?? undefined : undefined,
-        destinationSource: direction === 'in' ? destinationSource ?? undefined : undefined,
       }, idempotencyKey));
     }
     catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan transaksi kas'); setSaving(false); }
@@ -262,12 +251,10 @@ function CashEntryModal({ entries, onClose, onSaved }: { entries: CashLedgerEntr
     </div>
     <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{CASH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
     {direction === 'in' && <label>Sumber dana<select value={cashSource ?? ''} onChange={e => setCashSource(e.target.value as CashInSource)}><option value="" disabled>Pilih sumber dana…</option>{CASH_SOURCES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
-      {cashSource === 'external' && <small className="muted">Pemasukan dari luar — hanya menambah kas tujuan, tidak memotong dompet mana pun.</small>}
+      {cashSource === 'daily' && <small className="muted">Rekap kasir hari ini di Laporan otomatis berkurang {money.format(amount)}.</small>}
+      {cashSource === 'loan' && <small className="muted">Saldo akumulasi toko di Laporan otomatis berkurang {money.format(amount)}.</small>}
+      {cashSource === 'external' && <small className="muted">Pemasukan dari luar — tidak memotong rekap kasir maupun saldo akumulasi toko.</small>}
       {cashSource && cashSource !== 'external' && POOL_SOURCES.includes(cashSource as CashFundingSource) && <small className="muted">Saldo {CASH_SOURCES.find(c => c.value === cashSource)?.label} saat ini: {money.format(cashPoolBalance(entries, cashSource as CashFundingSource))}</small>}
-    </label>}
-    {direction === 'in' && <label>Kas tujuan<select value={destinationSource ?? ''} onChange={e => setDestinationSource(e.target.value as CashInSource)}><option value="" disabled>Pilih kas tujuan…</option>{CASH_DESTINATIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
-      {destinationSource && POOL_SOURCES.includes(destinationSource as CashFundingSource) && <small className="muted">Saldo {CASH_DESTINATIONS.find(c => c.value === destinationSource)?.label} saat ini: {money.format(cashPoolBalance(entries, destinationSource as CashFundingSource))}</small>}
-      {cashSource && cashSource !== 'external' && destinationSource && cashSource !== destinationSource && <small className="muted">Transfer: {CASH_SOURCES.find(c => c.value === cashSource)?.label} berkurang {money.format(amount)}, {CASH_DESTINATIONS.find(c => c.value === destinationSource)?.label} bertambah {money.format(amount)}.</small>}
     </label>}
     {direction === 'out' && <label>Sumber dana<select value={fundingSource ?? ''} onChange={e => { setFundingSource(e.target.value as CashFundingSource); setFundingCashierName(''); }}><option value="" disabled>Pilih sumber dana…</option>{FUNDING_SOURCES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
       {FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint && <small className="muted">{FUNDING_SOURCES.find(f => f.value === fundingSource)?.hint}</small>}

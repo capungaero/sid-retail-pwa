@@ -50,11 +50,19 @@ final class ReportSummaryController
 
         // (c) per-day "dari transaksi harian" draws.
         $cashTable = config('sid.cash_ledger.table'); $cc = config('sid.cash_ledger.columns');
+        // Mirrors DailyReportController: a kas keluar funded 'daily' or a kas masuk deposited from
+        // 'daily' (no cashier_name) both leave that day's till, so summary?from=X&to=X stays equal
+        // to daily?date=X.
         $drawnPerDay = DB::table($cashTable)
             ->join('app_cash_entry_funding', "$cashTable.{$cc['id']}", '=', 'app_cash_entry_funding.ledger_id')
             ->whereBetween("$cashTable.{$cc['date']}", [$from, $to])
-            ->where("$cashTable.{$cc['direction']}", 'out')
-            ->where('app_cash_entry_funding.funding_source', 'daily')
+            ->where(function ($q) use ($cashTable, $cc) {
+                $q->where(function ($q2) use ($cashTable, $cc) {
+                    $q2->where("$cashTable.{$cc['direction']}", 'out')->where('app_cash_entry_funding.funding_source', 'daily');
+                })->orWhere(function ($q2) use ($cashTable, $cc) {
+                    $q2->where("$cashTable.{$cc['direction']}", 'in')->where('app_cash_entry_funding.cash_source', 'daily')->whereNull('app_cash_entry_funding.cashier_name');
+                });
+            })
             ->selectRaw("$cashTable.{$cc['date']} as d, COALESCE(SUM($cashTable.{$cc['amount']}), 0) as amount")
             ->groupBy('d')->pluck('amount', 'd');
 

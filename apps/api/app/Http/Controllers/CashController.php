@@ -68,16 +68,11 @@ final class CashController
             // the plain cash-pool tags (cashier/petty/in_transit/bank) aren't tied to any single
             // cashier's day.
             'fundingCashierName' => 'required_if:fundingSource,daily|nullable|string|max:100',
-            // For a kas masuk: where the money CAME FROM. 'external' = genuine outside income
-            // (sale, capital, other) booked as a plain +X. Any wallet value means a transfer -
-            // the money is moved out of that wallet into destinationSource.
+            // For a kas masuk: which account the money came from. The +X always lands in the cash
+            // book; the tag only drives the report side-effect (Laporan) - 'daily' nets that day's
+            // cashier recap, 'loan' nets the store's accumulated revenue, 'external'/other neither.
             'cashSource' => 'required_if:direction,in|nullable|in:daily,loan,cashier,petty,in_transit,bank,external',
-            // For a kas masuk: which wallet the money LANDS in (the +X side). Always a real wallet.
-            'destinationSource' => 'required_if:direction,in|nullable|in:daily,loan,cashier,petty,in_transit,bank',
         ]);
-        if ($data['direction'] === 'in' && ($data['cashSource'] ?? null) !== 'external' && ($data['cashSource'] ?? null) === ($data['destinationSource'] ?? null)) {
-            return response()->json(['message' => 'Sumber dana dan kas tujuan tidak boleh sama.'], 422);
-        }
         try {
             // A "daily" (Kas Kasir hari ini) draw is money the shop already holds (that cashier's
             // own till), just moved to another purpose - so it books a matching kas masuk of the
@@ -115,35 +110,14 @@ final class CashController
                     $loanRepo->create($entry['id'], (float) $data['amount'], $forDate, $data['note'] ?? null);
                 }
             } else {
-                // The pre-created $entry is the +X leg; it lands in the DESTINATION wallet.
-                $src = $data['cashSource']; $dest = $data['destinationSource'];
-                $isTransfer = $src !== 'external' && $src !== $dest;
+                // Single +X row into the cash book, tagged with its source. The source only drives
+                // a report-side deduction (see DailyReportController / reports.ts): a 'daily' source
+                // nets that day's cashier recap, a 'loan' source nets the store's accumulated
+                // revenue. No paired ledger row - the cash book and the sales recap are separate.
                 DB::table('app_cash_entry_funding')->insert([
-                    'ledger_id' => $entry['id'], 'cash_source' => $dest, 'created_at' => now(),
+                    'ledger_id' => $entry['id'], 'cash_source' => $data['cashSource'], 'created_at' => now(),
                 ]);
-                $entry['cashSource'] = $dest;
-                if ($isTransfer) {
-                    // Move the money OUT of the source wallet: a paired kas keluar tagged with the
-                    // source, so cashPoolBalance/walletLedger and (for a 'daily' source) the daily
-                    // report all see the deduction. Guarded by a derived idempotency key so a retry
-                    // can't book the deduction twice. Booked straight through the ledger repo, so it
-                    // never triggers the out-path's loan/daily-pairing side effects.
-                    $userNote = $data['note'] ?? null;
-                    $srcLabel = self::poolLabel($src); $destLabel = self::poolLabel($dest);
-                    $linkedKey = $idempotencyKey ? self::deriveLinkedKey($idempotencyKey) : null;
-                    if (!$linkedKey || !Idempotency::find($linkedKey)) {
-                        $outNote = mb_substr('Setoran ke '.$destLabel.($userNote ? ' — '.$userNote : ''), 0, 50);
-                        $outLeg = $repo->create('out', (float) $data['amount'], $data['category'], $outNote, $request->user()?->getKey(), $linkedKey);
-                        DB::table('app_cash_entry_funding')->insert([
-                            'ledger_id' => $outLeg['id'], 'funding_source' => $src, 'created_at' => now(),
-                        ]);
-                    }
-                    // Make the +X leg read as "Dari <source>" so the pairing is legible in Buku Kas.
-                    $c = config('sid.cash_ledger.columns');
-                    $inNote = mb_substr('Dari '.$srcLabel.($userNote ? ' — '.$userNote : ''), 0, 50);
-                    DB::table(config('sid.cash_ledger.table'))->where($c['id'], $entry['id'])->update([$c['note'] => $inNote]);
-                    $entry['note'] = $inNote;
-                }
+                $entry['cashSource'] = $data['cashSource'];
             }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000' && ($winner = Idempotency::find($idempotencyKey))) return response()->json($winner, 201);
@@ -228,15 +202,6 @@ final class CashController
         $pay = DB::table('app_loan_payments')->where('loan_id', $loan->id)
             ->where('amount', (float) $row->{$c['amount']})->orderByDesc('created_at')->first();
         if ($pay) $fn($loan->id, $pay->id);
-    }
-
-    // Human label for a wallet code, used in the paired-transfer notes.
-    private static function poolLabel(string $code): string
-    {
-        return [
-            'daily' => 'Kas Kasir', 'loan' => 'Saldo Akumulasi Toko', 'bank' => 'Kas Bank',
-            'petty' => 'Kas Kecil', 'cashier' => 'Kas Kasir', 'in_transit' => 'Kas Di Jalan',
-        ][$code] ?? $code;
     }
 
     // idempotency_key is CHAR(36); this turns an arbitrary client key into a distinct, still

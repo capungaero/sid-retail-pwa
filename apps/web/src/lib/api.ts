@@ -348,9 +348,7 @@ export async function listCashEntries(): Promise<CashLedgerEntry[]> {
   return request('/finance/cash-entries');
 }
 
-const POOL_LABELS: Record<string, string> = { daily: 'Kas Kasir', loan: 'Saldo Akumulasi Toko', bank: 'Kas Bank', petty: 'Kas Kecil', cashier: 'Kas Kasir', in_transit: 'Kas Di Jalan' };
-
-export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string; cashSource?: CashInSource; destinationSource?: CashInSource }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
+export async function addCashEntry(input: { direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string; cashSource?: CashInSource }, idempotencyKey = crypto.randomUUID()): Promise<CashLedgerEntry> {
   if (!baseUrl) {
     let previousBalance = demoCashEntries.at(-1)?.balanceAfter ?? 0;
     const isDaily = input.direction === 'out' && input.fundingSource === 'daily';
@@ -361,17 +359,10 @@ export async function addCashEntry(input: { direction: CashDirection; amount: nu
       previousBalance = nextCashBalance(previousBalance, 'in', input.amount);
       demoCashEntries.push({ id: crypto.randomUUID(), direction: 'in', amount: input.amount, category: input.category, note: `Transaksi ${input.fundingCashierName}`, cashSource: 'daily', fundingCashierName: input.fundingCashierName, balanceAfter: previousBalance, createdAt: new Date().toISOString() });
     }
-    // Kas masuk from an internal wallet is a TRANSFER: book the paired kas keluar out of the
-    // source wallet FIRST (so the source balance drops), then the +X into the destination. Only
-    // 'external' (or source === destination) is plain income with no deduction.
-    const isTransfer = input.direction === 'in' && !!input.cashSource && input.cashSource !== 'external' && input.cashSource !== input.destinationSource;
-    if (isTransfer && input.cashSource && input.destinationSource) {
-      previousBalance = nextCashBalance(previousBalance, 'out', input.amount);
-      demoCashEntries.push({ id: crypto.randomUUID(), direction: 'out', amount: input.amount, category: input.category, note: `Setoran ke ${POOL_LABELS[input.destinationSource] ?? input.destinationSource}${input.note ? ` — ${input.note}` : ''}`, fundingSource: input.cashSource as CashFundingSource, balanceAfter: previousBalance, createdAt: new Date().toISOString() });
-    }
-    const landsIn = input.direction === 'in' ? (input.destinationSource ?? input.cashSource) : undefined;
-    const inNote = isTransfer && input.cashSource ? `Dari ${POOL_LABELS[input.cashSource] ?? input.cashSource}${input.note ? ` — ${input.note}` : ''}` : input.note;
-    const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: inNote, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, fundingCashierName: isDaily ? input.fundingCashierName : undefined, cashSource: landsIn, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
+    // Kas masuk lands in the cash book as a single +X row. Its cashSource tag drives the report
+    // side-effect (Laporan): a 'daily' source nets that day's cashier recap, a 'loan' source nets
+    // the store's accumulated revenue (see reports.ts); other/external sources change neither.
+    const entry: CashLedgerEntry = { id: crypto.randomUUID(), direction: input.direction, amount: input.amount, category: input.category, note: input.note, fundingSource: input.direction === 'out' ? input.fundingSource : undefined, fundingCashierName: isDaily ? input.fundingCashierName : undefined, cashSource: input.direction === 'in' ? input.cashSource : undefined, balanceAfter: nextCashBalance(previousBalance, input.direction, input.amount), createdAt: new Date().toISOString() };
     demoCashEntries.push(entry);
     // Draws against the previous day's already-closed till, not today's - see types.LoanPayable.
     if (input.direction === 'out' && input.fundingSource === 'loan') {

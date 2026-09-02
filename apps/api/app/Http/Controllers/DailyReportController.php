@@ -77,11 +77,19 @@ final class DailyReportController
         // out of that day's own cash takings - net them out of the day's revenue and its cash
         // bucket, or Rekap harian keeps showing the full sale total as if nothing left the till.
         $cashTable = config('sid.cash_ledger.table'); $cc = config('sid.cash_ledger.columns');
+        // Both a kas keluar funded 'daily' AND a kas masuk deposited from 'daily' leave today's
+        // till. The deposit has no cashier_name (that column is set only on the daily-DRAW's paired
+        // offset row, which is NOT a real withdrawal and must stay excluded here).
         $drawnFromDaily = (float) DB::table($cashTable)
             ->join('app_cash_entry_funding', "$cashTable.{$cc['id']}", '=', 'app_cash_entry_funding.ledger_id')
             ->where("$cashTable.{$cc['date']}", $date)
-            ->where("$cashTable.{$cc['direction']}", 'out')
-            ->where('app_cash_entry_funding.funding_source', 'daily')
+            ->where(function ($q) use ($cashTable, $cc) {
+                $q->where(function ($q2) use ($cashTable, $cc) {
+                    $q2->where("$cashTable.{$cc['direction']}", 'out')->where('app_cash_entry_funding.funding_source', 'daily');
+                })->orWhere(function ($q2) use ($cashTable, $cc) {
+                    $q2->where("$cashTable.{$cc['direction']}", 'in')->where('app_cash_entry_funding.cash_source', 'daily')->whereNull('app_cash_entry_funding.cashier_name');
+                });
+            })
             ->sum("$cashTable.{$cc['amount']}");
         if ($drawnFromDaily > 0) {
             $totalRevenue -= $drawnFromDaily;

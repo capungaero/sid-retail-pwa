@@ -26,10 +26,15 @@ export function filterByRange<T extends { createdAt: string }>(items: T[], range
 // given, narrows to just that cashier's own draws (matching fundingCashierName), so filtering
 // Laporan by one kasir also only nets what was actually taken from their day.
 export function dailyDrawnTotal(entries: CashLedgerEntry[], range: DateRange, cashierName?: string): number {
-  return entries
-    .filter(e => e.direction === 'out' && e.fundingSource === 'daily' && withinRange(e.createdAt, range))
-    .filter(e => !cashierName || e.fundingCashierName === cashierName)
-    .reduce((sum, e) => sum + e.amount, 0);
+  return entries.filter(e => withinRange(e.createdAt, range)).reduce((sum, e) => {
+    // Money physically pulled out of today's till: a kas keluar funded 'daily' (attributed to a
+    // cashier), OR a kas masuk DEPOSITED from 'daily' into the cash book. The deposit carries no
+    // cashier attribution (fundingCashierName is set only on the daily-DRAW's paired offset row,
+    // which must NOT be netted), so it counts toward the overall recap but not any one cashier's.
+    if (e.direction === 'out' && e.fundingSource === 'daily' && (!cashierName || e.fundingCashierName === cashierName)) return sum + e.amount;
+    if (e.direction === 'in' && e.cashSource === 'daily' && !e.fundingCashierName && !cashierName) return sum + e.amount;
+    return sum;
+  }, 0);
 }
 
 // Sum of loan payables' OUTSTANDING balance (amount minus payments) whose forDate falls in range -
@@ -48,7 +53,13 @@ export function loanOutstandingDrawnTotal(loans: LoanPayable[], range: DateRange
 // 'daily'-only (dailyDrawnTotal): both are specifically "today", and a loan draw was never
 // today's own revenue the way a 'daily' draw is.
 export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], loans: LoanPayable[], range: DateRange, cashierName?: string): number {
-  return dailyDrawnTotal(entries, range, cashierName) + loanOutstandingDrawnTotal(loans, range);
+  // A kas masuk deposited FROM the store's accumulated balance (cashSource 'loan') nets the
+  // store's reported revenue too - excluding "Pelunasan Pinjaman", which is a loan REPAYMENT
+  // returning to that balance, not a draw out of it.
+  const loanSourcedInflow = entries
+    .filter(e => e.direction === 'in' && e.cashSource === 'loan' && e.category !== 'Pelunasan Pinjaman' && withinRange(e.createdAt, range))
+    .reduce((sum, e) => sum + e.amount, 0);
+  return dailyDrawnTotal(entries, range, cashierName) + loanOutstandingDrawnTotal(loans, range) + loanSourcedInflow;
 }
 
 // Running balance for one physical cash pool tag (Kas Kasir / Kas Kecil / Kas Dalam Perjalanan /
@@ -293,7 +304,7 @@ export function buildDailyRecap(date: string, sales: RecapSale[], payments: Reca
   if (untracked.length) {
     byMethod.push({ methodCode: UNTRACKED_METHOD_CODE, methodName: 'Lainnya / tidak tercatat', count: untracked.length, amount: untracked.reduce((sum, s) => sum + netSaleTotal(s), 0) });
   }
-  const drawnFromDaily = cashEntries.filter(e => e.direction === 'out' && e.fundingSource === 'daily' && e.createdAt.slice(0, 10) === date).reduce((sum, e) => sum + e.amount, 0);
+  const drawnFromDaily = cashEntries.filter(e => e.createdAt.slice(0, 10) === date && ((e.direction === 'out' && e.fundingSource === 'daily') || (e.direction === 'in' && e.cashSource === 'daily' && !e.fundingCashierName))).reduce((sum, e) => sum + e.amount, 0);
   let totalRevenue = daySales.reduce((sum, s) => sum + netSaleTotal(s), 0);
   if (drawnFromDaily > 0) {
     totalRevenue -= drawnFromDaily;
