@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { CirclePlus, Printer, RefreshCw, Search, X } from 'lucide-react';
-import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, getPaymentMethods, getStoreProfile, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateInstrumentStatus } from '../lib/api';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { CirclePlus, Pencil, Printer, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { addCashEntry, addInstrument, addLoanPayment, addPayablePayment, addReceivablePayment, createReceivable, deleteCashEntry, getPaymentMethods, getStoreProfile, listCashEntries, listCustomers, listInstruments, listLoanPayables, listPayables, listReceivables, listSales, updateCashEntry, updateInstrumentStatus } from '../lib/api';
 import { payableOutstanding, receivableOutstanding } from '../lib/finance';
 import { cashPoolBalance, cashierRemainingDailyCash, walletLedger, withinRange } from '../lib/reports';
 import type { WalletLedgerEntry } from '../lib/reports';
@@ -96,8 +96,18 @@ function CashTab() {
   const [wallet, setWallet] = useState<CashFundingSource | 'all'>('all');
   const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [printing, setPrinting] = useState(false);
   const [loans, setLoans] = useState<LoanPayable[]>([]);
+  const [editing, setEditing] = useState<CashLedgerEntry | null>(null); const [busyId, setBusyId] = useState<string | null>(null);
   const load = () => { setLoading(true); setError(''); listCashEntries().then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat data')).finally(() => setLoading(false)); listLoanPayables().then(setLoans).catch(() => setLoans([])); };
   useEffect(load, []);
+  // Deleting cascades server-side (a loan draw takes its debt with it, a repayment restores the
+  // outstanding) - see CashController::destroy - so we reload the whole ledger rather than splice.
+  async function remove(e: CashLedgerEntry) {
+    if (!confirm(`Hapus transaksi kas ini?\n\n${e.category} ${e.direction === 'in' ? '+' : '-'}${money.format(e.amount)}${e.note ? `\n${e.note}` : ''}\n\nTindakan ini tidak bisa dibatalkan.`)) return;
+    setBusyId(e.id); setError('');
+    try { await deleteCashEntry(e.id); load(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus transaksi kas'); }
+    finally { setBusyId(null); }
+  }
   // Per loan-draw ledger row, how much is still unpaid - makes the Saldo Akumulasi Toko wallet
   // treat loans as outstanding (not cash), so a repayment never inflates its running balance.
   const outstandingByLedger = useMemo(() => Object.fromEntries(loans.map(l => [l.ledgerId, payableOutstanding(l)])), [loans]);
@@ -144,12 +154,54 @@ function CashTab() {
         <button className="button primary" onClick={() => setAdding(true)}><CirclePlus /> Catat transaksi kas</button>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">{from || to ? 'Tidak ada transaksi kas di rentang tanggal ini.' : 'Belum ada transaksi kas.'}</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{cashSourceLabel(e)}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.walletBalanceAfter)}</td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Memuat data kas…</div> : !ordered.length ? <div className="empty-state">{from || to ? 'Tidak ada transaksi kas di rentang tanggal ini.' : 'Belum ada transaksi kas.'}</div> : <div className="table-wrap"><table><thead><tr><th>Waktu</th><th>Kategori</th><th>Sumber dana</th><th>Catatan</th><th className="numeric">Jumlah</th><th className="numeric">Saldo</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{ordered.map(e => <tr key={e.id}><td>{new Date(e.createdAt).toLocaleString('id-ID')}</td><td>{e.category}</td><td>{cashSourceLabel(e)}</td><td>{e.note ?? '—'}</td><td className={`numeric mono ${e.direction === 'out' ? 'danger-text' : ''}`}>{e.direction === 'in' ? '+' : '-'}{money.format(e.amount)}</td><td className="numeric mono">{money.format(e.walletBalanceAfter)}</td><td><div className="row-actions"><button className="icon-button" aria-label="Edit transaksi" title="Edit" onClick={() => setEditing(e)} disabled={busyId === e.id}><Pencil /></button><button className="icon-button danger" aria-label="Hapus transaksi" title="Hapus" onClick={() => void remove(e)} disabled={busyId === e.id}><Trash2 /></button></div></td></tr>)}</tbody></table></div>}
     </section>
     {/* Reloads instead of appending locally: a "daily" kas keluar also books a second, linked kas
         masuk server-side (see CashController), so the response's one entry isn't the full picture. */}
     {adding && <CashEntryModal entries={entries} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
+    {editing && <CashEditModal entry={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
   </>;
+}
+
+// Editing is deliberately field-level (amount/category/note/date/direction), not funding-source:
+// changing which wallet paid would need to re-run the paired-entry / loan bookings store() does,
+// which delete-then-recreate covers more safely. A loan-linked amount change is mirrored into the
+// loan record server-side (see CashController::update).
+function CashEditModal({ entry, onClose, onSaved }: { entry: CashLedgerEntry; onClose: () => void; onSaved: () => void }) {
+  const d = new Date(entry.createdAt);
+  const isoDate = Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const [direction, setDirection] = useState<CashDirection>(entry.direction);
+  const [amount, setAmount] = useState(String(entry.amount));
+  const [category, setCategory] = useState(entry.category);
+  const [note, setNote] = useState(entry.note ?? '');
+  const [date, setDate] = useState(isoDate);
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    const amt = Number(amount);
+    if (!(amt > 0)) { setError('Jumlah harus lebih dari 0.'); return; }
+    if (!category.trim()) { setError('Kategori wajib diisi.'); return; }
+    if (!date) { setError('Tanggal wajib diisi.'); return; }
+    setBusy(true); setError('');
+    try { await updateCashEntry(entry.id, { direction, amount: amt, category: category.trim(), note: note.trim() || undefined, date }); onSaved(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan perubahan'); setBusy(false); }
+  }
+  return <div className="modal-overlay" role="presentation" onClick={onClose}>
+    <section className="modal" role="dialog" aria-modal="true" aria-labelledby="cash-edit-title" onClick={ev => ev.stopPropagation()}>
+      <div className="modal-heading"><div><p className="eyebrow">Buku kas</p><h2 id="cash-edit-title">Edit transaksi kas</h2></div><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <label>Arah<select value={direction} onChange={e => setDirection(e.target.value as CashDirection)}><option value="in">Kas masuk (+)</option><option value="out">Kas keluar (−)</option></select></label>
+          <label>Jumlah<input type="number" min="0" step="1" value={amount} onChange={e => setAmount(e.target.value)} /></label>
+          <label>Tanggal<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+          <label>Kategori<input value={category} maxLength={25} onChange={e => setCategory(e.target.value)} /></label>
+          <label className="span-2">Catatan<input value={note} maxLength={50} onChange={e => setNote(e.target.value)} /></label>
+        </div>
+        {error && <p className="field-error" role="alert">{error}</p>}
+        <div className="modal-actions"><button type="button" className="button secondary" onClick={onClose}>Batal</button><button className="button primary" type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan perubahan'}</button></div>
+      </form>
+    </section>
+  </div>;
 }
 
 const POOL_SOURCES: CashFundingSource[] = ['petty', 'bank'];

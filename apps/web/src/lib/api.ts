@@ -370,6 +370,28 @@ export async function addCashEntry(input: { direction: CashDirection; amount: nu
   return request('/finance/cash-entries', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) });
 }
 
+export async function updateCashEntry(id: string, input: { direction: CashDirection; amount: number; category: string; note?: string; date: string }): Promise<void> {
+  if (!baseUrl) {
+    const e = demoCashEntries.find(x => x.id === id);
+    if (e) { e.direction = input.direction; e.amount = input.amount; e.category = input.category; e.note = input.note; e.createdAt = `${input.date}T${e.createdAt.slice(11) || '12:00:00'}`; }
+    const loan = demoLoanPayables.find(l => l.ledgerId === id);
+    if (loan) loan.amount = input.amount;
+    return;
+  }
+  await request(`/finance/cash-entries/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export async function deleteCashEntry(id: string): Promise<void> {
+  if (!baseUrl) {
+    const i = demoCashEntries.findIndex(x => x.id === id);
+    if (i >= 0) demoCashEntries.splice(i, 1);
+    const li = demoLoanPayables.findIndex(l => l.ledgerId === id);
+    if (li >= 0) demoLoanPayables.splice(li, 1);
+    return;
+  }
+  await request(`/finance/cash-entries/${id}`, { method: 'DELETE' });
+}
+
 export async function listPayables(): Promise<Payable[]> {
   if (!baseUrl) return demoPayables;
   return request('/finance/payables');

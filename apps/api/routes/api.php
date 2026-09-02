@@ -88,6 +88,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::get('/finance/cash-entries', [CashController::class, 'index'])->middleware('ability:finance:read');
     Route::post('/finance/cash-entries', [CashController::class, 'store'])->middleware('ability:finance:write');
+    Route::put('/finance/cash-entries/{id}', [CashController::class, 'update'])->middleware('ability:finance:write');
+    Route::delete('/finance/cash-entries/{id}', [CashController::class, 'destroy'])->middleware('ability:finance:write');
     Route::get('/finance/payables', [PayableController::class, 'index'])->middleware('ability:finance:read');
     Route::post('/finance/payables/{id}/payments', [PayableController::class, 'addPayment'])->middleware('ability:finance:write');
     Route::get('/finance/loan-payables', [LoanPayableController::class, 'index'])->middleware('ability:finance:read');

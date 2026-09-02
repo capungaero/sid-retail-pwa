@@ -121,6 +121,84 @@ final class CashController
         return response()->json($entry, 201);
     }
 
+    // Edit one cash-ledger row. Amount/category/note/direction/date are all editable; a change to
+    // the amount of a loan-linked row is mirrored into the loan record so the outstanding stays
+    // consistent (a loan draw -> its app_loan_payables.amount; a "Pelunasan Pinjaman" repayment
+    // row -> the matching app_loan_payments row). The row's funding timestamp is moved onto the
+    // new date (keeping the original time-of-day) so the edited date actually shows in Buku Kas,
+    // which reads the funding timestamp as the row clock.
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate([
+            'direction' => 'required|in:in,out',
+            'amount' => 'required|numeric|gt:0',
+            'category' => 'required|string|max:25',
+            'note' => 'nullable|string|max:50',
+            'date' => 'required|date_format:Y-m-d',
+        ]);
+        $table = config('sid.cash_ledger.table'); $c = config('sid.cash_ledger.columns');
+        $row = DB::table($table)->where($c['id'], $id)->first();
+        if (!$row) return response()->json(['message' => 'Entri kas tidak ditemukan.'], 404);
+
+        DB::transaction(function () use ($table, $c, $id, $row, $data) {
+            DB::table($table)->where($c['id'], $id)->update([
+                $c['direction'] => $data['direction'], $c['amount'] => $data['amount'],
+                $c['category'] => $data['category'], $c['note'] => $data['note'] ?? null,
+                $c['date'] => $data['date'],
+            ]);
+            $f = DB::table('app_cash_entry_funding')->where('ledger_id', $id)->first();
+            if ($f) {
+                $time = $f->created_at ? substr((string) $f->created_at, 11, 8) : '12:00:00';
+                DB::table('app_cash_entry_funding')->where('ledger_id', $id)->update(['created_at' => $data['date'].' '.($time ?: '12:00:00')]);
+            }
+            $payable = DB::table('app_loan_payables')->where('ledger_id', $id)->first();
+            if ($payable) {
+                DB::table('app_loan_payables')->where('id', $payable->id)->update(['amount' => $data['amount']]);
+            } elseif ((string) ($row->{$c['category']} ?? '') === 'Pelunasan Pinjaman') {
+                self::withMatchedPayment($row, $c, fn ($loanId, $payId) => DB::table('app_loan_payments')->where('id', $payId)->update(['amount' => $data['amount']]));
+            }
+        });
+        return response()->json(['ok' => true]);
+    }
+
+    // Delete one cash-ledger row and everything that hangs off it: its funding row always, plus
+    // a cascade so the loan side never desyncs. Deleting a loan DRAW removes that debt entirely
+    // (its payable and every payment against it); deleting a "Pelunasan Pinjaman" repayment row
+    // removes the one matching payment, so the loan's outstanding rises back by that amount.
+    public function destroy(string $id): JsonResponse
+    {
+        $table = config('sid.cash_ledger.table'); $c = config('sid.cash_ledger.columns');
+        $row = DB::table($table)->where($c['id'], $id)->first();
+        if (!$row) return response()->json(['message' => 'Entri kas tidak ditemukan.'], 404);
+
+        DB::transaction(function () use ($table, $c, $id, $row) {
+            DB::table('app_cash_entry_funding')->where('ledger_id', $id)->delete();
+            $payable = DB::table('app_loan_payables')->where('ledger_id', $id)->first();
+            if ($payable) {
+                DB::table('app_loan_payments')->where('loan_id', $payable->id)->delete();
+                DB::table('app_loan_payables')->where('id', $payable->id)->delete();
+            } elseif ((string) ($row->{$c['category']} ?? '') === 'Pelunasan Pinjaman') {
+                self::withMatchedPayment($row, $c, fn ($loanId, $payId) => DB::table('app_loan_payments')->where('id', $payId)->delete());
+            }
+            DB::table($table)->where($c['id'], $id)->delete();
+        });
+        return response()->json(['ok' => true]);
+    }
+
+    // A "Pelunasan Pinjaman" ledger row carries no FK to its app_loan_payments row, but its note
+    // is "Pelunasan pinjaman #<first 8 of loan id>" - parse that, find the loan, and hand the
+    // newest payment of the same amount to the callback (nothing happens if none matches).
+    private static function withMatchedPayment(object $row, array $c, callable $fn): void
+    {
+        $note = (string) ($row->{$c['note']} ?? '');
+        if (!preg_match('/#([0-9a-fA-F]{8})/', $note, $m)) return;
+        $loan = DB::table('app_loan_payables')->where('id', 'like', $m[1].'%')->first();
+        if (!$loan) return;
+        $pay = DB::table('app_loan_payments')->where('loan_id', $loan->id)
+            ->where('amount', (float) $row->{$c['amount']})->orderByDesc('created_at')->first();
+        if ($pay) $fn($loan->id, $pay->id);
+    }
+
     // idempotency_key is CHAR(36); this turns an arbitrary client key into a distinct, still
     // 36-char, deterministic key for the auto-booked linked entry (same input -> same derived
     // key, so a retried request can't double-book it).
