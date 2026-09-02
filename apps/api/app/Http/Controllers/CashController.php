@@ -18,8 +18,11 @@ final class CashController
         // A loan is tracked as OUTSTANDING, not as cash income/expense: outstanding[$ledgerId] is how
         // much of that draw is still unpaid.
         $paidByLoan = DB::table('app_loan_payments')->groupBy('loan_id')->select('loan_id', DB::raw('SUM(amount) AS paid'))->pluck('paid', 'loan_id');
+        // Only 'draw' loans (kas keluar) weigh on the running balance as -outstanding; an 'inflow'
+        // loan's ledger row is a real kas MASUK (+X) and must stay +X here, its debt only nets
+        // Penjualan (reports.ts), never this cash balance.
         $outstanding = [];
-        foreach (DB::table('app_loan_payables')->get() as $l) {
+        foreach (DB::table('app_loan_payables')->where('origin', 'draw')->get() as $l) {
             $outstanding[$l->ledger_id] = max(0.0, (float) $l->amount - (float) ($paidByLoan[$l->id] ?? 0));
         }
         // Running balance is recomputed so a loan never inflates it: repayment rows (Pelunasan
@@ -110,14 +113,20 @@ final class CashController
                     $loanRepo->create($entry['id'], (float) $data['amount'], $forDate, $data['note'] ?? null);
                 }
             } else {
-                // Single +X row into the cash book, tagged with its source. The source only drives
-                // a report-side deduction (see DailyReportController / reports.ts): a 'daily' source
-                // nets that day's cashier recap, a 'loan' source nets the store's accumulated
-                // revenue. No paired ledger row - the cash book and the sales recap are separate.
+                // Single +X row into the cash book, tagged with its source. A 'daily' source nets
+                // that day's cashier recap (see DailyReportController / reports.ts).
                 DB::table('app_cash_entry_funding')->insert([
                     'ledger_id' => $entry['id'], 'cash_source' => $data['cashSource'], 'created_at' => now(),
                 ]);
                 $entry['cashSource'] = $data['cashSource'];
+                // A kas masuk from Saldo Akumulasi Toko is a borrowing against accumulated profit:
+                // book an 'inflow' hutang pinjaman linked to this entry, so Penjualan drops by its
+                // OUTSTANDING and is restored precisely when THIS debt is repaid (reports.ts). The
+                // +X stays a normal inflow in the cash balance - index() below keeps 'inflow' loans
+                // out of its outstanding map, so only kas KELUAR draws read as -outstanding there.
+                if ($data['cashSource'] === 'loan') {
+                    $loanRepo->create($entry['id'], (float) $data['amount'], now()->toDateString(), $data['note'] ?? null, 'inflow');
+                }
             }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000' && ($winner = Idempotency::find($idempotencyKey))) return response()->json($winner, 201);

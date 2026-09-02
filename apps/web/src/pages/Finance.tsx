@@ -112,7 +112,9 @@ function CashTab() {
   }
   // Per loan-draw ledger row, how much is still unpaid - makes the Saldo Akumulasi Toko wallet
   // treat loans as outstanding (not cash), so a repayment never inflates its running balance.
-  const outstandingByLedger = useMemo(() => Object.fromEntries(loans.map(l => [l.ledgerId, payableOutstanding(l)])), [loans]);
+  // Only 'draw' loans (kas keluar) net their ledger row down to -outstanding in the wallet view;
+  // an 'inflow' loan's row is a real kas masuk that stays +X (its debt nets Penjualan, not cash).
+  const outstandingByLedger = useMemo(() => Object.fromEntries(loans.filter(l => l.origin === 'draw').map(l => [l.ledgerId, payableOutstanding(l)])), [loans]);
   // "Semua dompet" shows the whole store ledger with its own balanceAfter (already loan-adjusted
   // server-side); picking one wallet isolates just its entries with a running balance scoped to
   // THAT wallet only - a big Saldo Akumulasi Toko draw elsewhere shouldn't make Kas Kasir's own log

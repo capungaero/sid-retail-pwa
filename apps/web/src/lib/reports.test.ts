@@ -157,10 +157,10 @@ describe('dailyDrawnTotal', () => {
 
 describe('loanOutstandingDrawnTotal', () => {
   const loans: LoanPayable[] = [
-    { id: 'l1', ledgerId: 'k1', amount: 200000, forDate: '2026-08-28', payments: [], createdAt: '2026-08-29T02:00:00.000Z' },
-    { id: 'l2', ledgerId: 'k2', amount: 100000, forDate: '2026-08-28', payments: [{ id: 'p1', amount: 40000, createdAt: '2026-08-29T03:00:00.000Z' }], createdAt: '2026-08-29T02:30:00.000Z' },
+    { id: 'l1', ledgerId: 'k1', origin: 'draw', amount: 200000, forDate: '2026-08-28', payments: [], createdAt: '2026-08-29T02:00:00.000Z' },
+    { id: 'l2', ledgerId: 'k2', origin: 'draw', amount: 100000, forDate: '2026-08-28', payments: [{ id: 'p1', amount: 40000, createdAt: '2026-08-29T03:00:00.000Z' }], createdAt: '2026-08-29T02:30:00.000Z' },
     // Not counted: forDate outside the range.
-    { id: 'l3', ledgerId: 'k3', amount: 999999, forDate: '2026-08-01', payments: [], createdAt: '2026-08-02T00:00:00.000Z' },
+    { id: 'l3', ledgerId: 'k3', origin: 'draw', amount: 999999, forDate: '2026-08-01', payments: [], createdAt: '2026-08-02T00:00:00.000Z' },
   ];
   it('sums outstanding (amount minus payments) for loans whose forDate falls in range', () => {
     expect(loanOutstandingDrawnTotal(loans, { start: '2026-08-28', end: '2026-08-28' })).toBe(260000);
@@ -179,30 +179,24 @@ describe('reportedRevenueDrawnTotal', () => {
     { id: 'k4', direction: 'out', amount: 99999, category: 'x', fundingSource: 'petty', balanceAfter: 0, createdAt: '2026-08-29T04:00:00.000Z' },
     { id: 'k5', direction: 'out', amount: 99999, category: 'x', fundingSource: 'daily', fundingCashierName: 'satri', balanceAfter: 0, createdAt: '2026-08-01T00:00:00.000Z' },
   ];
-  // Loans (kas keluar draws) no longer net Penjualan - only the daily draw does here (50000).
-  const loans: LoanPayable[] = [{ id: 'l1', ledgerId: 'k2', amount: 30000, forDate: '2026-08-29', payments: [], createdAt: '2026-08-30T02:00:00.000Z' }];
-  it('nets the daily draw but NOT a loan draw (loans spend accumulated cash, not Penjualan)', () => {
-    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(50000);
+  const range = { start: '2026-08-29', end: '2026-08-29' };
+  it('nets the daily draw only when there are no inflow loans', () => {
+    expect(reportedRevenueDrawnTotal(entries, [], range)).toBe(50000);
   });
   it('narrows to one cashier own daily draws when given', () => {
-    expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(50000);
+    expect(reportedRevenueDrawnTotal(entries, [], range, 'satri')).toBe(50000);
   });
-  it('a kas masuk sourced from Saldo Akumulasi Toko deducts Penjualan', () => {
-    const withInflow: CashLedgerEntry[] = [
-      ...entries,
-      { id: 'in1', direction: 'in', amount: 20000, category: 'Setoran modal', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T05:00:00.000Z' },
-    ];
-    // daily draw 50000 + loan inflow 20000
-    expect(reportedRevenueDrawnTotal(withInflow, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(70000);
+  it('a draw loan (kas keluar) does NOT net Penjualan', () => {
+    const draw: LoanPayable[] = [{ id: 'l1', ledgerId: 'k2', origin: 'draw', amount: 30000, forDate: '2026-08-29', payments: [], createdAt: '2026-08-30T02:00:00.000Z' }];
+    expect(reportedRevenueDrawnTotal(entries, draw, range)).toBe(50000);
   });
-  it('repaying the hutang pinjaman (Pelunasan Pinjaman) restores Penjualan by the repaid amount', () => {
-    const cycle: CashLedgerEntry[] = [
-      ...entries,
-      { id: 'in1', direction: 'in', amount: 20000, category: 'Setoran modal', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T05:00:00.000Z' },
-      { id: 'in2', direction: 'in', amount: 20000, category: 'Pelunasan Pinjaman', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T06:00:00.000Z' },
-    ];
-    // 20000 deducted then 20000 restored nets to 0; only the daily draw (50000) remains
-    expect(reportedRevenueDrawnTotal(cycle, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(50000);
+  it('an inflow loan nets Penjualan by its outstanding, and repaying it restores Penjualan', () => {
+    const unpaid: LoanPayable[] = [{ id: 'l2', ledgerId: 'k6', origin: 'inflow', amount: 30000, forDate: '2026-08-29', payments: [], createdAt: '2026-08-29T05:00:00.000Z' }];
+    // daily draw 50000 + inflow outstanding 30000
+    expect(reportedRevenueDrawnTotal(entries, unpaid, range)).toBe(80000);
+    const repaid: LoanPayable[] = [{ ...unpaid[0], payments: [{ id: 'p1', amount: 30000, createdAt: '2026-08-29T06:00:00.000Z' }] }];
+    // fully repaid -> outstanding 0 -> only the daily draw remains
+    expect(reportedRevenueDrawnTotal(entries, repaid, range)).toBe(50000);
   });
 });
 

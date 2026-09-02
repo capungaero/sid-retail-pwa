@@ -48,20 +48,20 @@ export function loanOutstandingDrawnTotal(loans: LoanPayable[], range: DateRange
     .reduce((sum, l) => sum + Math.max(0, l.amount - totalPaid(l.payments)), 0);
 }
 
-// The deduction Laporan > Penjualan & pembelian applies to its "Penjualan" figure. Drawing the
-// store's accumulated balance no longer nets Penjualan on the kas KELUAR side (that draw just
-// spends the "Saldo Akumulasi Toko" cash and links to a hutang pinjaman) - so `_loans` is unused.
-// Penjualan is netted only by:
+// The deduction Laporan > Penjualan & pembelian applies to its "Penjualan" figure. Penjualan is
+// netted by:
 //   - dailyDrawnTotal: money pulled from today's own till, and
-//   - the NET of the Saldo Akumulasi Toko cycle: a kas masuk sourced 'loan' realises accumulated
-//     profit into spendable cash and draws Penjualan down; repaying the hutang pinjaman later
-//     ("Pelunasan Pinjaman", also a 'loan' inflow) returns that money and restores Penjualan by the
-//     repaid amount. So a fully repaid cycle nets to zero and Penjualan comes back to its full value.
-export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], _loans: LoanPayable[], range: DateRange, cashierName?: string): number {
-  const loanSourcedNet = entries
-    .filter(e => e.direction === 'in' && e.cashSource === 'loan' && withinRange(e.createdAt, range))
-    .reduce((sum, e) => sum + (e.category === 'Pelunasan Pinjaman' ? -e.amount : e.amount), 0);
-  return dailyDrawnTotal(entries, range, cashierName) + loanSourcedNet;
+//   - the OUTSTANDING of each 'inflow' hutang pinjaman: a kas masuk from Saldo Akumulasi Toko
+//     realises accumulated profit into spendable cash and books an 'inflow' debt, so Penjualan
+//     drops by what is still owed and is restored precisely as that specific debt is repaid
+//     (a fully repaid inflow loan nets to zero). Kas keluar 'draw' loans do NOT net Penjualan.
+// This per-loan link is why repaying only ever restores what its own borrowing deducted, so the
+// figure can never rise above real sales the way a global Pelunasan sum could.
+export function reportedRevenueDrawnTotal(entries: CashLedgerEntry[], loans: LoanPayable[], range: DateRange, cashierName?: string): number {
+  const inflowLoanOutstanding = loans
+    .filter(l => l.origin === 'inflow' && withinRange(`${l.forDate}T00:00:00.000`, range))
+    .reduce((sum, l) => sum + Math.max(0, l.amount - totalPaid(l.payments)), 0);
+  return dailyDrawnTotal(entries, range, cashierName) + inflowLoanOutstanding;
 }
 
 // Running balance for one physical cash pool tag (Kas Kasir / Kas Kecil / Kas Dalam Perjalanan /

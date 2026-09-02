@@ -17,12 +17,14 @@ final class LoanPayableRepository
         return $loans->map(fn ($l) => $this->mapLoan($l, $payments->get($l->id, collect())))->all();
     }
 
-    // Called from CashController::store right after a "loan" kas keluar entry is booked.
-    public function create(string $ledgerId, float $amount, string $forDate, ?string $note): array
+    // Called from CashController::store right after a "loan" cash entry is booked. $origin is
+    // 'draw' for a kas keluar (spends the pool) or 'inflow' for a kas masuk (nets Penjualan by its
+    // outstanding until repaid) - see the migration comment.
+    public function create(string $ledgerId, float $amount, string $forDate, ?string $note, string $origin = 'draw'): array
     {
         $id = (string) Str::uuid();
         DB::table('app_loan_payables')->insert([
-            'id' => $id, 'ledger_id' => $ledgerId, 'amount' => $amount, 'for_date' => $forDate,
+            'id' => $id, 'ledger_id' => $ledgerId, 'origin' => $origin, 'amount' => $amount, 'for_date' => $forDate,
             'note' => $note, 'created_at' => now(),
         ]);
         $loan = DB::table('app_loan_payables')->where('id', $id)->first();
@@ -78,6 +80,7 @@ final class LoanPayableRepository
         return [
             'id' => (string) $l->id,
             'ledgerId' => (string) $l->ledger_id,
+            'origin' => (string) ($l->origin ?? 'draw'),
             'amount' => (float) $l->amount,
             'forDate' => (string) $l->for_date,
             'note' => $l->note !== null && $l->note !== '' ? (string) $l->note : null,

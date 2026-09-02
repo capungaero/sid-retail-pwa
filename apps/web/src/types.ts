@@ -76,7 +76,9 @@ export type LoanPayment = { id: string; amount: number; note?: string; createdAt
 // the day BEFORE the draw itself, since a loan pulls from the previous day's already-closed
 // sales rather than today's still-open till (see reports.ts's loanOutstandingDrawnTotal, which
 // nets only the outstanding amount - amount minus payments - against that date in Laporan).
-export type LoanPayable = { id: string; ledgerId: string; amount: number; forDate: string; note?: string; payments: LoanPayment[]; createdAt: string };
+// origin 'draw' = a kas keluar draw (no Penjualan effect); 'inflow' = a kas masuk from Saldo
+// Akumulasi Toko that nets Penjualan by its outstanding until repaid (see reportedRevenueDrawnTotal).
+export type LoanPayable = { id: string; ledgerId: string; origin: 'draw' | 'inflow'; amount: number; forDate: string; note?: string; payments: LoanPayment[]; createdAt: string };
 
 export type ReceivablePayment = { id: string; amount: number; note?: string; createdAt: string };
 export type Receivable = { id: string; customerId: string; customerName: string; reference: string; amount: number; payments: ReceivablePayment[]; createdAt: string; dueAt?: string };

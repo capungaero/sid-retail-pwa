@@ -366,7 +366,11 @@ export async function addCashEntry(input: { direction: CashDirection; amount: nu
     demoCashEntries.push(entry);
     // Draws against the previous day's already-closed till, not today's - see types.LoanPayable.
     if (input.direction === 'out' && input.fundingSource === 'loan') {
-      demoLoanPayables.push({ id: crypto.randomUUID(), ledgerId: entry.id, amount: input.amount, forDate: todayKey(new Date(Date.now() - 86400000)), note: input.note, payments: [], createdAt: new Date().toISOString() });
+      demoLoanPayables.push({ id: crypto.randomUUID(), ledgerId: entry.id, origin: 'draw', amount: input.amount, forDate: todayKey(new Date(Date.now() - 86400000)), note: input.note, payments: [], createdAt: new Date().toISOString() });
+    }
+    // A kas masuk from Saldo Akumulasi Toko books an 'inflow' debt that nets Penjualan until repaid.
+    if (input.direction === 'in' && input.cashSource === 'loan') {
+      demoLoanPayables.push({ id: crypto.randomUUID(), ledgerId: entry.id, origin: 'inflow', amount: input.amount, forDate: todayKey(), note: input.note, payments: [], createdAt: new Date().toISOString() });
     }
     return entry;
   }
