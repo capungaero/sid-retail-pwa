@@ -187,13 +187,22 @@ describe('reportedRevenueDrawnTotal', () => {
   it('narrows to one cashier own daily draws when given', () => {
     expect(reportedRevenueDrawnTotal(entries, loans, { start: '2026-08-29', end: '2026-08-29' }, 'satri')).toBe(50000);
   });
-  it('nets a kas masuk sourced from Saldo Akumulasi Toko, but not a Pelunasan Pinjaman inflow', () => {
+  it('a kas masuk sourced from Saldo Akumulasi Toko deducts Penjualan', () => {
     const withInflow: CashLedgerEntry[] = [
       ...entries,
       { id: 'in1', direction: 'in', amount: 20000, category: 'Setoran modal', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T05:00:00.000Z' },
-      { id: 'in2', direction: 'in', amount: 70000, category: 'Pelunasan Pinjaman', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T06:00:00.000Z' },
     ];
+    // daily draw 50000 + loan inflow 20000
     expect(reportedRevenueDrawnTotal(withInflow, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(70000);
+  });
+  it('repaying the hutang pinjaman (Pelunasan Pinjaman) restores Penjualan by the repaid amount', () => {
+    const cycle: CashLedgerEntry[] = [
+      ...entries,
+      { id: 'in1', direction: 'in', amount: 20000, category: 'Setoran modal', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T05:00:00.000Z' },
+      { id: 'in2', direction: 'in', amount: 20000, category: 'Pelunasan Pinjaman', cashSource: 'loan', balanceAfter: 0, createdAt: '2026-08-29T06:00:00.000Z' },
+    ];
+    // 20000 deducted then 20000 restored nets to 0; only the daily draw (50000) remains
+    expect(reportedRevenueDrawnTotal(cycle, loans, { start: '2026-08-29', end: '2026-08-29' })).toBe(50000);
   });
 });
 
