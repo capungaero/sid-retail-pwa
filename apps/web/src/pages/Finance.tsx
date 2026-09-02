@@ -446,9 +446,12 @@ function LoanPayableTab() {
 // The wallets a loan repayment's money can come out of - each books a real kas keluar from that
 // wallet (see LoanPayableController). 'daily' (Kas Kasir) draws today's takings under a chosen
 // cashier; the rest draw down their own pool balance.
-// Same wallet choices as the Kas masuk & keluar tab (FUNDING_SOURCES), so repaying a hutang
-// pinjaman returns the cash under the same category it was recorded with there.
-const LOAN_PAY_SOURCES: { value: CashFundingSource; label: string }[] = FUNDING_SOURCES;
+const LOAN_PAY_SOURCES: { value: CashFundingSource; label: string }[] = [
+  { value: 'daily', label: 'Kas Kasir (Transaksi Hari Ini)' },
+  { value: 'petty', label: 'Kas Kecil' },
+  { value: 'bank', label: 'Kas Bank' },
+  { value: 'in_transit', label: 'Kas Dalam Perjalanan' },
+];
 
 function LoanPaymentModal({ loan, onClose, onSaved }: { loan: LoanPayable; onClose: () => void; onSaved: (loan: LoanPayable) => void }) {
   const outstanding = payableOutstanding(loan);
