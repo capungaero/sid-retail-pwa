@@ -61,7 +61,11 @@ export type CashFundingSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_tra
 // Only meaningful for direction 'in': which cash pool the money landed in. Mirrors
 // CashFundingSource's full vocabulary - 'daily'/'loan' are plain descriptive tags here (no
 // netting/debt logic attached the way they are for kas keluar), same as cashier/petty/in_transit/bank.
-export type CashInSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank';
+// 'external' means the money came from OUTSIDE the store's own wallets (a sale, capital
+// injection, other income) - a plain +X with no paired deduction. Any other value on a kas masuk
+// is a SOURCE wallet: the money is moved out of it (paired kas keluar) into the destination pool,
+// so a kas masuk from an internal wallet is a transfer, not free income.
+export type CashInSource = 'daily' | 'loan' | 'cashier' | 'petty' | 'in_transit' | 'bank' | 'external';
 export type CashLedgerEntry = { id: string; direction: CashDirection; amount: number; category: string; note?: string; fundingSource?: CashFundingSource; fundingCashierName?: string; cashSource?: CashInSource; balanceAfter: number; createdAt: string };
 
 export type PayablePayment = { id: string; amount: number; note?: string; createdAt: string };
