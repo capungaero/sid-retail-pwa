@@ -23,15 +23,15 @@ import type { PermissionKey } from './types';
 // akses per peran — it's a cross-module overview, so it's shown to any role that manages more
 // than pure checkout (i.e. has some permission besides 'pos'), and hidden for a bare kasir who
 // only ever needs the Transaksi screen. Every other section maps 1:1 to a permission checkbox.
-const sections: { label: string; path: string; icon: typeof Gauge; ready: boolean; permission: PermissionKey | null }[] = [
-  { label: 'Ringkasan', path: '/dashboard', icon: Gauge, ready: true, permission: null },
-  { label: 'Master Data', path: '/master', icon: PackageSearch, ready: true, permission: 'inventory' },
-  { label: 'Transaksi', path: '/pos', icon: ShoppingCart, ready: true, permission: 'pos' },
-  { label: 'Persediaan', path: '/inventory', icon: Boxes, ready: true, permission: 'inventory' },
-  { label: 'Keuangan', path: '/finance', icon: CircleDollarSign, ready: true, permission: 'finance' },
-  { label: 'Laporan', path: '/reports', icon: ReceiptText, ready: true, permission: 'reports' },
-  { label: 'HRD', path: '/hrd', icon: UsersRound, ready: true, permission: 'hrd' },
-  { label: 'Pengaturan', path: '/settings', icon: Settings, ready: true, permission: 'settings' }
+const sections: { label: string; path: string; icon: typeof Gauge; ready: boolean; permission: PermissionKey | null; color: string }[] = [
+  { label: 'Ringkasan', path: '/dashboard', icon: Gauge, ready: true, permission: null, color: '#0b62fe' },
+  { label: 'Master Data', path: '/master', icon: PackageSearch, ready: true, permission: 'inventory', color: '#ff9500' },
+  { label: 'Transaksi', path: '/pos', icon: ShoppingCart, ready: true, permission: 'pos', color: '#34c759' },
+  { label: 'Persediaan', path: '/inventory', icon: Boxes, ready: true, permission: 'inventory', color: '#af52de' },
+  { label: 'Keuangan', path: '/finance', icon: CircleDollarSign, ready: true, permission: 'finance', color: '#ff2d55' },
+  { label: 'Laporan', path: '/reports', icon: ReceiptText, ready: true, permission: 'reports', color: '#00c7be' },
+  { label: 'HRD', path: '/hrd', icon: UsersRound, ready: true, permission: 'hrd', color: '#5856d6' },
+  { label: 'Pengaturan', path: '/settings', icon: Settings, ready: true, permission: 'settings', color: '#ff6b00' }
 ];
 
 function sectionVisible(section: { permission: PermissionKey | null }, granted: PermissionKey[]): boolean {
@@ -112,7 +112,7 @@ function Shell({ user, onLogout }: { user: AuthUser | null; onLogout: () => void
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark compact"><SidMark /><span>SID</span></div><button className="icon-button mobile-only" onClick={() => setOpen(false)} aria-label="Tutup menu"><X /></button></div>
-      <nav aria-label="Navigasi utama">{visibleSections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><item.icon aria-hidden="true" /><span>{item.label}</span>{!item.ready && <span className="nav-status">Segera</span>}</NavLink>)}</nav>
+      <nav aria-label="Navigasi utama">{visibleSections.map(item => <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}><span className="nav-ico" style={{ background: `${item.color}22` }}><item.icon aria-hidden="true" style={{ width: 15, height: 15, color: item.color }} /></span><span>{item.label}</span>{!item.ready && <span className="nav-status">Segera</span>}</NavLink>)}</nav>
       <div className="sidebar-footer"><span className={`connection ${online ? 'online' : 'offline'}`}>{online ? <Wifi aria-hidden="true" /> : <WifiOff aria-hidden="true" />}{online ? 'Terhubung' : 'Offline'}</span><button className="nav-link logout" onClick={onLogout}><LogOut aria-hidden="true" />Keluar</button></div>
     </aside>
     {open && <button className="scrim" aria-label="Tutup menu" onClick={() => setOpen(false)} />}
