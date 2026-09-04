@@ -130,7 +130,7 @@ export function Dashboard() {
         <span className="status success">Aktif</span>
       </div></div>
       {chart.empty && !loading ? <p className="muted" style={{ padding: '24px 0' }}>Belum ada transaksi pada rentang ini.</p> : <svg className="line-chart" viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" role="img" aria-label="Grafik pendapatan">
-        <defs><linearGradient id="lcGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity="0.28" /><stop offset="100%" stopColor="#3b82f6" stopOpacity="0" /></linearGradient></defs>
+        <defs><linearGradient id="lcGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0b62fe" stopOpacity="0.28" /><stop offset="100%" stopColor="#0b62fe" stopOpacity="0" /></linearGradient></defs>
         <line className="lc-axis" x1="0" y1={CHART_H - padBottom} x2={CHART_W} y2={CHART_H - padBottom} />
         {areaPath && <path className="lc-area" d={areaPath} />}
         {linePath && <path className="lc-line" d={linePath} />}
