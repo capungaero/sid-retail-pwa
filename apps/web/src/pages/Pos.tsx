@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArchiveRestore, ArrowLeftRight, Banknote, Check, ChevronDown, CircleDollarSign, CircleUserRound, Clock3, History, Minus, PackageSearch, Pause, Plus, Printer, RefreshCw, Search, ShoppingBasket, Trash2, TrendingDown, Wallet, X } from 'lucide-react';
-import { completeSale, exchangeSale, getPaymentMethods, getPrinterConfig, getStoreProfile, listCashEntries, listCustomers, listProducts, listSales } from '../lib/api';
+import { completeSale, exchangeSale, getPaymentMethods, getStoreProfile, listCashEntries, listCustomers, listProducts, listSales } from '../lib/api';
 import { money, number } from '../lib/money';
-import { openBlankPreviewPopup, openDailySalesReportPopup, receiptHtml, sendToPrintBridge, type Receipt } from '../lib/print';
+import { openBlankPreviewPopup, openDailySalesReportPopup, type Receipt } from '../lib/print';
 import { submitCheckout } from '../lib/checkout';
+import { Modal, buildReprintReceipt, useReceiptPreview } from '../components/ReceiptPreview';
 import { countDistinctTransactions, exchangeHopsFor, netBasketTotal, rootSalesOnly } from '../lib/reports';
 import { todayKey as localTodayKey } from '../lib/date';
-import type { CartLine, CashLedgerEntry, Customer, ExchangePayload, HeldSale, PaperWidth, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
+import type { CartLine, CashLedgerEntry, Customer, ExchangePayload, HeldSale, PaymentMethod, Product, SaleLine, SaleRecord, StoreProfile, Unit } from '../types';
 
 const STORAGE_KEY = 'sid-held-sales';
 const general: Customer = { id: 'general', code: 'UMUM', name: 'Pelanggan Umum', tier: 'retail' };
@@ -73,48 +74,9 @@ export function Pos({ online }: { online: boolean }) {
   </div>;
 }
 
-function Modal({ title, children, onClose }: { title:string; children:ReactNode; onClose:()=>void }) { const ref=useRef<HTMLElement>(null); const previous=useRef<HTMLElement|null>(null); const onCloseRef=useRef(onClose); onCloseRef.current=onClose; useEffect(()=>{previous.current=document.activeElement as HTMLElement; const box=ref.current; const focusable=()=>Array.from(box?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])')??[]); (box?.querySelector<HTMLElement>('[data-autofocus]')??focusable()[0])?.focus(); const trap=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.stopPropagation();onCloseRef.current();return}if(e.key!=='Tab')return;const all=focusable();if(!all.length)return;const first=all[0],last=all[all.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}};box?.addEventListener('keydown',trap);return()=>{box?.removeEventListener('keydown',trap);previous.current?.focus()}},[]); return <div className="modal-overlay"><section ref={ref} className="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="modal-heading"><h2 id="dialog-title">{title}</h2><button className="icon-button" onClick={onClose} aria-label="Tutup"><X /></button></div>{children}</section></div>; }
 function UnitDialog({ line, onPick, onClose }: { line:CartLine; onPick:(u:Unit)=>void; onClose:()=>void }) { return <Modal title="Pilih satuan dan harga" onClose={onClose}><div className="option-list">{line.product.units.map((unit,index) => <button key={unit.name} data-autofocus={index===0?'true':undefined} onClick={() => onPick(unit)}><span><strong>{unit.name}</strong><small>Isi {unit.multiplier} satuan dasar</small></span><strong>{money.format(unit.price)}</strong>{unit.name === line.unit.name && <Check />}</button>)}</div></Modal>; }
 function CustomerDialog({ onPick, onClose }: { onPick:(c:Customer)=>void; onClose:()=>void }) { const [customers,setCustomers]=useState<Customer[]>([]); const [q,setQ]=useState(''); const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [retry,setRetry]=useState(0); useEffect(()=>{let active=true;setLoading(true);setError('');const timer=setTimeout(()=>listCustomers(q).then(data=>{if(active)setCustomers(data)}).catch(err=>{if(active){setCustomers([]);setError(err instanceof Error?err.message:'Pelanggan gagal dimuat')}}).finally(()=>{if(active)setLoading(false)}),100);return()=>{active=false;clearTimeout(timer)}},[q,retry]); return <Modal title="Pilih pelanggan" onClose={onClose}><label className="search-box"><Search/><span className="sr-only">Cari pelanggan</span><input data-autofocus="true" value={q} onChange={e=>setQ(e.target.value)} placeholder="Nama atau kode pelanggan…"/></label>{loading?<div className="empty-state" role="status">Memuat pelanggan…</div>:error?<div className="inline-recovery" role="alert"><span>{error}</span><button className="button secondary" onClick={()=>setRetry(v=>v+1)}>Coba lagi</button></div>:<div className="option-list">{customers.map(c=><button key={c.id} onClick={()=>onPick(c)}><span><strong>{c.name}</strong><small>{c.code}{c.phone ? ` · ${c.phone}`:''}</small></span><span className="status">{c.tier}</span></button>)}{!customers.length&&<div className="empty-state">Pelanggan tidak ditemukan.</div>}</div>}</Modal>; }
 function HeldDialog({ sales,onPick,onClose }:{sales:HeldSale[];onPick:(s:HeldSale)=>void;onClose:()=>void}) { return <Modal title="Transaksi ditahan" onClose={onClose}>{!sales.length?<div className="empty-state">Tidak ada transaksi yang ditahan.</div>:<div className="option-list">{sales.map(s=><button key={s.id} onClick={()=>onPick(s)}><span><strong>{s.reference}</strong><small>{s.customer.name} · {s.lines.length} baris · <Clock3/> {new Date(s.heldAt).toLocaleTimeString('id-ID')}</small></span><strong>{money.format(s.lines.reduce((a,l)=>a+l.qty*l.unit.price-l.discount,0))}</strong></button>)}</div>}</Modal>; }
-// Shown after a sale has already saved successfully, before anything is actually sent to a
-// printer. Closing/skipping is a valid choice (the sale is safe either way) - only an actual
-// print failure (bridge unreachable) is reported back as printFailed to the caller.
-function ReceiptPreviewModal({ receipt, profile, paperWidth, onDone }: { receipt: Receipt; profile?: StoreProfile; paperWidth: PaperWidth; onDone: (ok: boolean, err?: Error) => void }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [printing, setPrinting] = useState(false);
-  const hasBridge = Boolean(import.meta.env.VITE_PRINTER_BRIDGE_URL);
-  async function doPrint() {
-    setPrinting(true);
-    try { if (hasBridge) await sendToPrintBridge(receipt); else iframeRef.current?.contentWindow?.print(); onDone(true); }
-    catch (e) { onDone(false, e instanceof Error ? e : new Error('Cetak gagal')); }
-    finally { setPrinting(false); }
-  }
-  return <Modal title="Pratinjau struk" onClose={() => onDone(true)}>
-    <div className="receipt-preview"><iframe ref={iframeRef} title="Pratinjau struk" srcDoc={receiptHtml(receipt, profile, paperWidth)} /></div>
-    <div className="modal-actions"><button className="button secondary" onClick={() => onDone(true)}>Lewati cetak</button><button className="button primary" data-autofocus="true" onClick={doPrint} disabled={printing}><Printer /> {printing ? 'Mencetak…' : 'Cetak'}</button></div>
-  </Modal>;
-}
-// Fetches store profile + printer config (best-effort, falls back to safe defaults), shows the
-// ReceiptPreviewModal, and resolves once the cashier prints or explicitly skips. Shared between
-// the post-checkout flow (PaymentDialog) and reprinting a past sale (HistoryTab) so both go
-// through the exact same preview-before-print step, not two divergent implementations.
-function useReceiptPreview() {
-  const [preview, setPreview] = useState<{ receipt: Receipt; profile?: StoreProfile; paperWidth: PaperWidth } | null>(null);
-  const resolverRef = useRef<{ resolve: () => void; reject: (e: Error) => void } | null>(null);
-  const previewAndPrint = useCallback((receipt: Receipt): Promise<void> => {
-    return (async () => {
-      let profile: StoreProfile | undefined; try { profile = await getStoreProfile(); } catch { profile = undefined; }
-      let paperWidth: PaperWidth = '58mm'; try { paperWidth = (await getPrinterConfig()).paperWidth; } catch { /* keep default */ }
-      return { profile, paperWidth };
-    })().then(({ profile, paperWidth }) => new Promise<void>((resolve, reject) => {
-      resolverRef.current = { resolve, reject };
-      setPreview({ receipt, profile, paperWidth });
-    }));
-  }, []);
-  const modal = preview ? <ReceiptPreviewModal receipt={preview.receipt} profile={preview.profile} paperWidth={preview.paperWidth} onDone={(ok, err) => { const resolver = resolverRef.current; resolverRef.current = null; setPreview(null); if (ok) resolver?.resolve(); else resolver?.reject(err ?? new Error('Cetak gagal')); }} /> : null;
-  return { previewAndPrint, modal };
-}
 function PaymentDialog({ customer,cart,total,onClose,onDone }:{customer:Customer;cart:CartLine[];total:number;onClose:()=>void;onDone:(invoice:string,printFailed:boolean)=>void}) {
   const [paid,setPaid]=useState(total); const [saving,setSaving]=useState(false); const [error,setError]=useState('');
   const [methods,setMethods]=useState<PaymentMethod[]>([]); const [method,setMethod]=useState<PaymentMethod|null>(null);
@@ -306,24 +268,8 @@ function HistoryTab() {
   const sisaSaldo = pendapatanHariIni - pengeluaranHariIni;
   async function reprint(sale: SaleRecord) {
     setReprintingId(sale.id);
-    try {
-      // Reprint the CURRENT basket, not the original sale: a line that was later swapped is
-      // replaced by the item the customer actually kept (its final replacement), and the old item
-      // drops off entirely - so the receipt and its total match what was really taken home.
-      const lines = sale.lines.map(l => {
-        const hops = exchangeHopsFor(sale, l.productId, l.unit, sales);
-        if (!hops.length) return { productName: l.productName, qty: l.qty, unitName: l.unit, unitPrice: l.price, discount: l.discount };
-        const final = hops[hops.length - 1];
-        return { productName: final.newProductName, qty: final.newQty, unitName: final.newUnit, unitPrice: final.newQty ? final.newLineValue / final.newQty : final.newLineValue, discount: 0 };
-      });
-      const total = netBasketTotal(sale, sales);
-      await previewAndPrint({
-        invoice: sale.invoice,
-        customer: { id: sale.customerId || 'general', code: sale.customerId || 'UMUM', name: sale.customerName || 'Pelanggan Umum', tier: 'retail' },
-        lines,
-        paid: sale.paid + (total - sale.total), total
-      });
-    } catch { /* preview/print was skipped or failed - cashier can just try again from the row */ }
+    try { await previewAndPrint(buildReprintReceipt(sale, sales)); }
+    catch { /* preview/print was skipped or failed - cashier can just try again from the row */ }
     finally { setReprintingId(null); }
   }
   async function printReport() {
