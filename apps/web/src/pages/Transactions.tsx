@@ -1,29 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Printer, RefreshCw, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getStoredUser, listSales } from '../lib/api';
+import { getStoredUser, getStoreProfile, listSales } from '../lib/api';
 import { rootSalesOnly, summarizeSales } from '../lib/reports';
 import { money, number } from '../lib/money';
 import { resolveRole } from '../lib/permissions';
 import { SaleStockDetailModal } from '../components/SaleStockDetailModal';
-import { buildReprintReceipt, useReceiptPreview } from '../components/ReceiptPreview';
+import { openBlankPreviewPopup, openDailySalesReportPopup } from '../lib/print';
 import type { SaleRecord } from '../types';
 
 export function Transactions() {
   const [sales, setSales] = useState<SaleRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<SaleRecord | null>(null);
-  const [reprintingId, setReprintingId] = useState<string | null>(null);
-  const { previewAndPrint, modal } = useReceiptPreview();
+  const [printing, setPrinting] = useState(false);
   const isAdmin = resolveRole(getStoredUser()?.role) === 'admin';
-  // Same preview-then-print flow as the POS HistoryTab's "Cetak ulang", so a receipt reprinted
-  // from here is identical to one reprinted from the till.
-  async function reprint(sale: SaleRecord) {
-    setReprintingId(sale.id);
-    try { await previewAndPrint(buildReprintReceipt(sale, sales)); }
-    catch { /* preview/print was skipped or failed - user can just try again from the row */ }
-    finally { setReprintingId(null); }
-  }
   const load = () => { setLoading(true); setError(''); listSales().then(setSales).catch(e => setError(e instanceof Error ? e.message : 'Gagal memuat transaksi')).finally(() => setLoading(false)); };
   useEffect(load, []);
 
@@ -36,6 +27,21 @@ export function Transactions() {
   // faktur's own Detail instead (see rootSalesOnly). `summary` above still reads the full
   // `filtered` set, which already nets exchanges correctly regardless of which rows are shown.
   const rows = useMemo(() => rootSalesOnly(filtered), [filtered]);
+  // Prints the rows currently shown (same filter) as the A4 sales report. window.open() must run
+  // synchronously inside the click handler or popup blockers kill it - open a blank tab first,
+  // then fill it in once the store profile fetch resolves (same pattern as Pos.printReport).
+  function printHistory() {
+    const popup = openBlankPreviewPopup();
+    setPrinting(true);
+    (async () => {
+      let storeName: string | undefined; try { storeName = (await getStoreProfile())?.name; } catch { storeName = undefined; }
+      const fmt = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('id-ID', { dateStyle: 'long' });
+      const label = from || to ? `${from ? fmt(from) : '…'} s/d ${to ? fmt(to) : '…'}` : 'Semua transaksi';
+      try { openDailySalesReportPopup(rows, label, { storeName, allSales: sales, popup }); }
+      catch (e) { popup?.close(); alert(e instanceof Error ? e.message : 'Gagal menyiapkan laporan cetak'); }
+      finally { setPrinting(false); }
+    })();
+  }
 
   return <div className="page">
     <div className="page-heading"><div><p className="eyebrow">Ringkasan</p><h1>Riwayat transaksi</h1><p>Seluruh penjualan, dapat difilter berdasarkan tanggal.</p></div><Link className="button secondary" to="/dashboard"><ArrowLeft /> Kembali</Link></div>
@@ -49,17 +55,16 @@ export function Transactions() {
         <label className="search-box"><Search aria-hidden="true" /><span className="sr-only">Cari faktur atau pelanggan</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari faktur atau nama pelanggan…" /></label>
         <label className="date-field">Dari<input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} /></label>
         <label className="date-field">Sampai<input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} /></label>
+        <button className="button secondary" onClick={printHistory} disabled={printing || loading || !rows.length}><Printer /> {printing ? 'Menyiapkan…' : 'Cetak'}</button>
         <button className="button secondary" onClick={load} disabled={loading}><RefreshCw /> Muat ulang</button>
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
-      {loading ? <div className="empty-state">Memuat riwayat transaksi…</div> : rows.length === 0 ? <div className="empty-state">Tidak ada transaksi yang cocok.</div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Tanggal</th><th>Kasir</th><th>Pelanggan</th><th>Barang</th><th className="numeric">Item</th><th className="numeric">Total</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>
+      {loading ? <div className="empty-state">Memuat riwayat transaksi…</div> : rows.length === 0 ? <div className="empty-state">Tidak ada transaksi yang cocok.</div> : <div className="table-wrap"><table><thead><tr><th>Faktur</th><th>Tanggal</th><th>Kasir</th><th>Pelanggan</th><th>Barang</th><th className="numeric">Item</th><th className="numeric">Total</th></tr></thead><tbody>
         {rows.map(s => <tr key={s.id} className={isAdmin ? 'row-clickable' : undefined} tabIndex={isAdmin ? 0 : undefined} role={isAdmin ? 'button' : undefined} onClick={isAdmin ? () => setDetail(s) : undefined} onKeyDown={isAdmin ? e => { if (e.key === 'Enter') setDetail(s); } : undefined}>
           <td className="mono">{s.invoice}{s.exchanges && s.exchanges.length > 0 && <span className="status" style={{ marginLeft: 6 }}>Ditukar</span>}</td><td>{new Date(s.createdAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</td><td>{s.cashierName || '—'}</td><td>{s.customerName || 'Tanpa nama'}</td><td><small>{s.lines.map(l => l.productName).join(', ')}</small></td><td className="numeric mono">{number.format(s.lines.reduce((sum, l) => sum + l.qty, 0))}</td><td className="numeric mono">{money.format(s.total)}</td>
-          <td><button className="button secondary" onClick={e => { e.stopPropagation(); void reprint(s); }} disabled={reprintingId === s.id} aria-label={`Cetak struk ${s.invoice}`}><Printer /> {reprintingId === s.id ? '…' : 'Cetak'}</button></td>
         </tr>)}
       </tbody></table></div>}
     </section>
     {detail && <SaleStockDetailModal sale={detail} allSales={sales} onClose={() => setDetail(null)} />}
-    {modal}
   </div>;
 }
